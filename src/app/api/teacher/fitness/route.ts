@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server';
 import { TeacherFitnessService } from '@/features/teacher/fitness.service';
 import { successResponse, errorResponse } from '@/lib/api-response';
+import { getAuthenticatedTeacherId, teacherCanAccessStudent } from '@/app/api/teacher/_utils';
 
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
-        const teacher_id = Number(searchParams.get('teacher_id'));
+        const teacher_id = await getAuthenticatedTeacherId();
         const class_level = searchParams.get('class_level') || '';
         const room = searchParams.get('room') || '';
         const action = searchParams.get('action');
+        if (!teacher_id) return errorResponse('Unauthorized', 401);
 
         if (action === 'years') {
             const years = await TeacherFitnessService.getAcademicYears();
@@ -16,7 +18,6 @@ export async function GET(request: Request) {
         }
 
         if (action === 'advisor-classes') {
-            if (!teacher_id || Number.isNaN(teacher_id)) return errorResponse('teacher_id required', 400);
             const classes = await TeacherFitnessService.getAdvisorClasses(teacher_id);
             return successResponse(classes);
         }
@@ -37,7 +38,6 @@ export async function GET(request: Request) {
         }
 
         if (action === 'students') {
-            if (!teacher_id || Number.isNaN(teacher_id)) return errorResponse('teacher_id required', 400);
             if (!class_level) return errorResponse('class_level required', 400);
             if (!room) return errorResponse('room required', 400);
 
@@ -72,6 +72,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
+        const teacherId = await getAuthenticatedTeacherId();
+        if (!teacherId) return errorResponse('Unauthorized', 401);
         const body = await request.json();
         const { action, ...payload } = body;
 
@@ -85,7 +87,11 @@ export async function POST(request: Request) {
             return successResponse(data);
         }
 
-        const data = await TeacherFitnessService.saveFitnessTest(body);
+        const studentId = Number(body.student_id);
+        if (!studentId || !await teacherCanAccessStudent(teacherId, studentId)) {
+            return errorResponse('Forbidden student', 403);
+        }
+        const data = await TeacherFitnessService.saveFitnessTest({ ...body, teacher_id: teacherId });
         return successResponse(data);
     } catch (error: any) {
         console.error("FITNESS SAVE ERROR:", error);

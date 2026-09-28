@@ -71,6 +71,21 @@ function formatTermLabel(section: SectionLike) {
     return `ปีการศึกษา ${getAcademicYearValue(section) || "-"} ภาคเรียน ${txt(section?.semester) || "-"}`;
 }
 
+const SCORE_PERIOD_OPTIONS = [
+    { value: "before_midterm", label: "ก่อนกลางภาค" },
+    { value: "after_midterm", label: "หลังกลางภาค" },
+] as const;
+
+function formatScorePeriod(value: unknown) {
+    return SCORE_PERIOD_OPTIONS.find((option) => option.value === value)?.label || "";
+}
+
+function getScorePeriodOrder(value: unknown) {
+    if (value === "before_midterm") return 0;
+    if (value === "after_midterm") return 1;
+    return 2;
+}
+
 export function ScoreInputFeature({ session }: { session: any }) {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -93,6 +108,8 @@ export function ScoreInputFeature({ session }: { session: any }) {
     const [saving, setSaving] = useState(false);
     const [studentSearch, setStudentSearch] = useState("");
     const [showManageModal, setShowManageModal] = useState(false);
+    const [manageCategoryFilter, setManageCategoryFilter] = useState("all");
+    const [manageAssessmentPeriodFilter, setManageAssessmentPeriodFilter] = useState("all");
     const [showCategoryManageModal, setShowCategoryManageModal] = useState(false);
     const [categories, setCategories] = useState<any[]>([]);
     const [categoryTypes, setCategoryTypes] = useState<any[]>([]);
@@ -109,6 +126,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
     const [newMax, setNewMax] = useState(100);
     const [addingHeader, setAddingHeader] = useState(false);
     const [newCategoryId, setNewCategoryId] = useState<number | null>(null);
+    const [newAssessmentPeriod, setNewAssessmentPeriod] = useState("");
     const [newCategoryTypeName, setNewCategoryTypeName] = useState("");
     const [addingCategoryType, setAddingCategoryType] = useState(false);
     const [editingCategoryTypeId, setEditingCategoryTypeId] = useState<number | null>(null);
@@ -121,6 +139,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
     const [editMax, setEditMax] = useState(100);
     const [updatingHeader, setUpdatingHeader] = useState(false);
     const [editCategoryId, setEditCategoryId] = useState<number | null>(null);
+    const [editAssessmentPeriod, setEditAssessmentPeriod] = useState("");
     const [deletingHeaderId, setDeletingHeaderId] = useState<number | null>(null);
     const activeHeader = headers.find((h) => h.id === selectedHeaderId) || null;
     const activeMax = toNum(activeHeader?.max_score);
@@ -146,6 +165,64 @@ export function ScoreInputFeature({ session }: { session: any }) {
     }).length;
 
     const isPassFail = sectionInfo?.subjects?.evaluation_type_id === 2 || sectionInfo?.subjects?.subject_categories_id === 3;
+
+    const isContinuousScoreCategory = (categoryId: number | null) => {
+        const category = categories.find((item) => Number(item.id) === Number(categoryId));
+        const typeName = txt(category?.grade_category_types?.type_name || category?.name);
+        return typeName.includes("คะแนนเก็บ") || typeName.includes("ระหว่างภาค");
+    };
+
+    const orderedHeaders = useMemo(
+        () => [
+            ...categories.flatMap((category) =>
+                headers
+                    .filter((header) => header.category_id === category.id)
+                    .sort((left, right) =>
+                        getScorePeriodOrder(left.assessment_period) - getScorePeriodOrder(right.assessment_period)
+                        || Number(left.id) - Number(right.id)
+                    )
+            ),
+            ...headers.filter((header) => !header.category_id),
+        ],
+        [categories, headers]
+    );
+
+    const assessmentPeriodGroups = useMemo(() => {
+        const groups: { key: string; label: string; count: number; hasPeriod: boolean }[] = [];
+        orderedHeaders.forEach((header) => {
+            const period = txt(header.assessment_period);
+            const key = `${header.category_id || "other"}:${period || "none"}`;
+            const previous = groups[groups.length - 1];
+            if (previous?.key === key) {
+                previous.count += 1;
+                return;
+            }
+            groups.push({
+                key,
+                label: formatScorePeriod(period),
+                count: 1,
+                hasPeriod: Boolean(period),
+            });
+        });
+        return groups;
+    }, [orderedHeaders]);
+
+    const filteredManageHeaders = useMemo(() => {
+        let result = orderedHeaders;
+        if (manageCategoryFilter === "uncategorized") {
+            result = result.filter((header) => !header.category_id);
+        } else if (manageCategoryFilter !== "all") {
+            const categoryId = Number(manageCategoryFilter);
+            result = result.filter((header) => Number(header.category_id) === categoryId);
+        }
+        if (manageAssessmentPeriodFilter !== "all") {
+            result = result.filter((header) => header.assessment_period === manageAssessmentPeriodFilter);
+        }
+        return result;
+    }, [manageAssessmentPeriodFilter, manageCategoryFilter, orderedHeaders]);
+
+    const manageCategoryUsesPeriod = /^\d+$/.test(manageCategoryFilter)
+        && isContinuousScoreCategory(Number(manageCategoryFilter));
 
     const invalidCount = students.reduce((acc, s) => {
         if (isPassFail) return acc;
@@ -550,10 +627,36 @@ export function ScoreInputFeature({ session }: { session: any }) {
         setSelectedRoomKey(value);
     };
 
+    const handleClearFilters = () => {
+        if (changedCount > 0 && !window.confirm("มีคะแนนที่แก้ไขและยังไม่ได้บันทึก ต้องการล้างตัวกรองหรือไม่?")) {
+            return;
+        }
+
+        setSelectedYearKey("");
+        setSelectedTermKey("");
+        setSelectedSubjectKey("");
+        setSelectedRoomKey("");
+        setStudentSearch("");
+        setSectionInfo(null);
+        setSelectedHeaderId(null);
+        setHeaders([]);
+        setStudents([]);
+        setCategories([]);
+        setScoreMap({});
+        setOriginalScoreMap({});
+        setIsPassedMap({});
+        setOriginalIsPassedMap({});
+        setLoading(false);
+        router.replace("/teacher/score_input");
+    };
+
     const handleAddHeader = async () => {
         const title = newTitle.trim();
         if (!title) return alert("กรุณากรอกชื่อหัวข้อคะแนน");
         if (!isPassFail && toNum(newMax) <= 0) return alert("คะแนนเต็มต้องมากกว่า 0");
+        if (isContinuousScoreCategory(newCategoryId) && !newAssessmentPeriod) {
+            return alert("กรุณาเลือกช่วงคะแนนเก็บก่อนหรือหลังกลางภาค");
+        }
         setAddingHeader(true);
         try {
             const created = await TeacherApiService.addScoreHeader(
@@ -561,11 +664,13 @@ export function ScoreInputFeature({ session }: { session: any }) {
                 title,
                 isPassFail ? 0 : toNum(newMax),
                 [],
-                newCategoryId || undefined
+                newCategoryId || undefined,
+                isContinuousScoreCategory(newCategoryId) ? newAssessmentPeriod : null
             );
             setNewTitle("");
             setNewMax(100);
             setNewCategoryId(null);
+            setNewAssessmentPeriod("");
             setShowAddHeader(false);
             await loadSectionData();
             if (created?.id) setSelectedHeaderId(created.id);
@@ -578,6 +683,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
         setEditTitle(String(h.title || ""));
         setEditMax(toNum(h.max_score) || 100);
         setEditCategoryId(h.category_id || null);
+        setEditAssessmentPeriod(h.assessment_period || "");
     };
 
     const handleUpdateHeader = async () => {
@@ -585,6 +691,9 @@ export function ScoreInputFeature({ session }: { session: any }) {
         const title = editTitle.trim();
         if (!title) return alert("กรุณากรอกชื่อหัวข้อ");
         if (!isPassFail && toNum(editMax) <= 0) return alert("คะแนนเต็มต้องมากกว่า 0");
+        if (isContinuousScoreCategory(editCategoryId) && !editAssessmentPeriod) {
+            return alert("กรุณาเลือกช่วงคะแนนเก็บก่อนหรือหลังกลางภาค");
+        }
         setUpdatingHeader(true);
         try {
             await TeacherApiService.updateScoreHeader(
@@ -592,7 +701,8 @@ export function ScoreInputFeature({ session }: { session: any }) {
                 title,
                 isPassFail ? 0 : toNum(editMax),
                 [],
-                editCategoryId || undefined
+                editCategoryId || undefined,
+                isContinuousScoreCategory(editCategoryId) ? editAssessmentPeriod : null
             );
             setEditingHeaderId(null);
             await loadSectionData();
@@ -712,14 +822,14 @@ export function ScoreInputFeature({ session }: { session: any }) {
                 <div className="absolute inset-y-0 right-[-3rem] w-60 bg-white/10 skew-x-[-18deg]" />
                 <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="flex-1 min-w-0">
-                        <Link href="/teacher/scores" className="inline-flex items-center gap-1.5 text-pink-100 hover:text-white mb-2 transition-colors text-sm font-medium">
+                        <Link href="/teacher/scores" className="inline-flex items-center gap-1.5 text-pink-100 hover:text-white mb-2 transition-colors text-base font-medium">
                             <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                             </svg>
                             กลับหน้าหลัก
                         </Link>
-                        <div className="mt-1">
-                            <h1 className="text-2xl font-bold flex items-center gap-2">
+                        <div className="mt-4">
+                            <h1 className="text-3xl font-bold flex items-center gap-2">
                                 <svg className="w-8 h-8 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
@@ -794,18 +904,32 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                 <p className="text-xs font-medium text-slate-400">เลือกวิชาและระดับชั้นที่ต้องการจัดการ</p>
                             </div>
                         </div>
-                        {!hasSection && (
-                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-pink-50 border border-pink-100 animate-pulse">
-                                <div className="w-1.5 h-1.5 rounded-full bg-pink-500" />
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-pink-600">กรุณาเลือกข้อมูลให้ครบ</span>
-                            </div>
-                        )}
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                            {!hasSection && (
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-pink-50 border border-pink-100 animate-pulse">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-pink-500" />
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-pink-600">กรุณาเลือกข้อมูลให้ครบ</span>
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={handleClearFilters}
+                                disabled={!hasSection && !selectedYearKey && !selectedTermKey && !selectedSubjectKey && !selectedRoomKey && !studentSearch}
+                                className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                title="ล้างปีการศึกษา ภาคเรียน รายวิชา ระดับชั้น และคำค้นหานักเรียน"
+                            >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12a9 9 0 101.7-5.25M3 4v5h5" />
+                                </svg>
+                                ล้างตัวกรอง
+                            </button>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         {/* Academic Year */}
                         <div className="space-y-2">
-                            <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">
+                            <label className="flex items-center gap-2 text-base font-black text-black ml-1">
                                 <svg className="h-4 w-4 text-pink-500/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                 ปีการศึกษา
                             </label>
@@ -830,7 +954,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
 
                         {/* Semester */}
                         <div className="space-y-2">
-                            <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">
+                            <label className="flex items-center gap-2 text-base font-black text-black ml-1">
                                 <svg className="h-4 w-4 text-red-500/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                                 ภาคเรียน
                             </label>
@@ -856,7 +980,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
 
                         {/* Subject */}
                         <div className="space-y-2">
-                            <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">
+                            <label className="flex items-center gap-2 text-base font-black text-black ml-1">
                                 <svg className="h-4 w-4 text-pink-500/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
                                 วิชาที่สอน
                             </label>
@@ -880,7 +1004,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
 
                         {/* Room */}
                         <div className="space-y-2">
-                            <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">
+                            <label className="flex items-center gap-2 text-base font-black text-black ml-1">
                                 <svg className="h-4 w-4 text-red-500/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
                                 ระดับชั้น
                             </label>
@@ -931,7 +1055,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                     <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                                     <span className="font-semibold text-slate-700">{students.length}</span> คน
                                 </span>
-                                <span className="text-sm text-slate-500 flex items-center gap-1">
+                                <span className="text-base text-slate-500 flex items-center gap-1">
                                     กรอกแล้ว <span className="font-semibold text-pink-700">{filledCount}</span>/{students.length}
                                 </span>
                                 {changedCount > 0 && (
@@ -954,21 +1078,21 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                         value={studentSearch}
                                         onChange={(e) => setStudentSearch(e.target.value)}
                                         placeholder="ค้นหานักเรียน..."
-                                        className="w-48 rounded-lg border border-slate-200 pl-9 pr-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-pink-400"
+                                        className="w-48 rounded-lg border border-slate-200 pl-9 pr-3 py-1.5 text-lg outline-none focus:ring-2 focus:ring-pink-400"
                                     />
                                 </div>
                                 <button
                                     onClick={async () => {
                                         setShowManageModal(true);
                                     }}
-                                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition-colors"
+                                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-lg font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition-colors"
                                 >
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
                                     จัดการหัวข้อ
                                 </button>
                                 <button
                                     onClick={() => setShowCategoryManageModal(true)}
-                                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-pink-600 hover:bg-pink-50 flex items-center gap-2 transition-colors"
+                                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-lg font-medium text-pink-600 hover:bg-pink-50 flex items-center gap-2 transition-colors"
                                 >
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                                     จัดการหมวดหมู่
@@ -986,47 +1110,87 @@ export function ScoreInputFeature({ session }: { session: any }) {
                             <div className="p-16 text-center text-slate-400 text-sm">ไม่พบรายชื่อนักเรียนในกลุ่มนี้</div>
                         ) : (
                             <div className="overflow-x-auto max-w-full">
-                                <table className="w-full border-collapse">
+                                <table className="w-full border-collapse border border-slate-300">
                                     <thead>
                                         {categories.length > 0 && (
-                                            <tr className="bg-slate-50/50 border-b border-slate-200">
-                                                <th colSpan={3} className="border-r border-slate-200"></th>
+                                            <tr className="bg-slate-50/50 border-b border-slate-300">
+                                                <th
+                                                    rowSpan={3}
+                                                    className="sticky left-0 z-20 bg-slate-50 px-4 py-3 text-base font-bold text-slate-600 uppercase tracking-wider min-w-[80px] w-16 border-r border-slate-300 align-middle"
+                                                >
+                                                    เลขที่
+                                                </th>
+
+                                                <th
+                                                    rowSpan={3}
+                                                    className="sticky left-16 z-20 bg-slate-50 px-4 py-3 text-base font-bold text-slate-600 uppercase tracking-wider min-w-[80px] border-r border-slate-300 align-middle"
+                                                >
+                                                    รหัสประจำตัว
+                                                </th>
+
+                                                <th
+                                                    rowSpan={3}
+                                                    className="sticky left-[152px] z-20 bg-slate-50 px-4 py-3 text-base font-bold text-slate-600 uppercase tracking-wider min-w-[180px] border-r border-slate-300 align-middle shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]"
+                                                >
+                                                    ชื่อ-นามสกุล
+                                                </th>
+
                                                 {categories.map(cat => {
                                                     const catHeaders = headers.filter(h => h.category_id === cat.id);
                                                     if (catHeaders.length === 0) return null;
                                                     return (
-                                                        <th key={cat.id} colSpan={catHeaders.length} className="px-4 py-2 text-center text-[10px] font-black uppercase text-pink-500 border-r border-slate-100 bg-pink-50/30">
+                                                        <th key={cat.id} colSpan={catHeaders.length} className="px-4 py-2 text-center text-sm font-black uppercase text-pink-600 border-r border-slate-300 bg-pink-50/50">
                                                             {cat.grade_category_types?.type_name || cat.name} ({cat.weight_percent}%)
                                                         </th>
                                                     );
                                                 })}
                                                 {headers.filter(h => !h.category_id).length > 0 && (
-                                                    <th colSpan={headers.filter(h => !h.category_id).length} className="px-4 py-2 text-center text-[10px] font-black uppercase text-slate-400 border-r border-slate-100">
+                                                    <th colSpan={headers.filter(h => !h.category_id).length} className="px-4 py-2 text-center text-[10px] font-black uppercase text-slate-500 border-r border-slate-300">
                                                         อื่นๆ
                                                     </th>
                                                 )}
-                                                {!isPassFail && <th className="bg-pink-50/10"></th>}
+                                                {!isPassFail && (
+                                                    <th
+                                                        rowSpan={3}
+                                                        className="min-w-[170px] border-l border-slate-300 bg-red-50/70 px-4 py-3 text-center align-middle text-lg font-bold text-red-700"
+                                                    >
+                                                        คะแนนรวม (%)
+                                                    </th>
+                                                )}
                                             </tr>
                                         )}
-                                        <tr className="bg-slate-50/80 border-b border-slate-200">
-                                            <th className="sticky left-0 z-10 bg-slate-50 px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-16 border-r border-slate-200">เลขที่</th>
-                                            <th className="sticky left-16 z-10 bg-slate-50 px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider min-w-[100px] border-r border-slate-200">รหัส</th>
-                                            <th className="sticky left-[152px] z-10 bg-slate-50 px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider min-w-[180px] border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">ชื่อ-นามสกุล</th>
+                                        {assessmentPeriodGroups.some((group) => group.hasPeriod) && (
+                                            <tr className="border-b border-slate-300 bg-white">
+
+                                                {assessmentPeriodGroups.map((group) => (
+                                                    <th
+                                                        key={group.key}
+                                                        colSpan={group.count}
+                                                        className={`border-r border-slate-300 px-3 py-1.5 text-center text-xs font-bold ${group.hasPeriod
+                                                            ? "bg-fuchsia-100/70 text-fuchsia-800 ring-1 ring-inset ring-fuchsia-300"
+                                                            : "bg-slate-50/70 text-slate-400"
+                                                            }`}
+                                                    >
+                                                        {group.label || "ปลายภาค"}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        )}
+                                        <tr className="bg-slate-50/80 border-b border-slate-300 text-black juistify-center items-center">
+
 
                                             {/* Sorted by Category */}
-                                            {[...categories.map(c => headers.filter(h => h.category_id === c.id)).flat(), ...headers.filter(h => !h.category_id)].map(h => (
+                                            {orderedHeaders.map(h => (
                                                 <th key={h.id}
                                                     onClick={() => setSelectedHeaderId(h.id)}
-                                                    className={`px-4 py-3 text-center text-xs font-bold uppercase tracking-wider border-r border-slate-100 min-w-[100px] cursor-pointer transition-colors ${selectedHeaderId === h.id ? "bg-pink-50 text-pink-700" : "text-slate-500 hover:bg-slate-100"}`}>
+                                                    className={`px-4 py-3 text-center text-lg font-bold border-r border-slate-300 min-w-[100px] cursor-pointer transition-colors ${selectedHeaderId === h.id ? "bg-pink-100/70 text-pink-800" : "text-slate-600 hover:bg-slate-100"}`}>
                                                     <div className="line-clamp-1" title={h.title}>{h.title}</div>
-                                                    {!isPassFail && <div className="mt-0.5 text-[10px] font-normal opacity-60">เต็ม {toNum(h.max_score)}</div>}
+                                                    {!isPassFail && <div className="mt-0.5 text-sm font-normal opacity-60">เต็ม {toNum(h.max_score)}</div>}
                                                 </th>
                                             ))}
-
-                                            {!isPassFail && <th className="px-4 py-3 text-center text-xs font-bold text-red-600 uppercase tracking-wider bg-red-50/50 min-w-[100px]">คะแนนรวม (%)</th>}
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100">
+                                    <tbody className="divide-y divide-slate-200">
                                         {filteredStudents.map((s, i) => {
                                             const total = studentTotals[s.id] || 0;
                                             const studentScores = scoreMap[s.id] || {};
@@ -1034,13 +1198,13 @@ export function ScoreInputFeature({ session }: { session: any }) {
 
                                             return (
                                                 <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                                                    <td className="sticky left-0 z-10 bg-white group-hover:bg-slate-50 px-4 py-2 text-sm text-slate-500 border-r border-slate-100">{i + 1}</td>
-                                                    <td className="sticky left-16 z-10 bg-white group-hover:bg-slate-50 px-4 py-2 text-[15px] font-medium text-slate-600 border-r border-slate-100 tracking-tight">{s.student_code}</td>
-                                                    <td className="sticky left-[152px] z-10 bg-white group-hover:bg-slate-50 px-4 py-2 text-sm font-medium text-slate-800 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                                    <td className="sticky left-0 z-10 bg-white group-hover:bg-slate-50 px-4 py-2 text-sm text-slate-500 border-r border-slate-200">{i + 1}</td>
+                                                    <td className="sticky left-16 z-10 bg-white group-hover:bg-slate-50 px-4 py-2 text-[15px] font-medium text-slate-600 border-r border-slate-200 tracking-tight">{s.student_code}</td>
+                                                    <td className="sticky left-[152px] z-10 bg-white group-hover:bg-slate-50 px-4 py-2 text-sm font-medium text-slate-800 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                                                         {s.prefix}{s.first_name} {s.last_name}
                                                     </td>
 
-                                                    {headers.map(h => {
+                                                    {orderedHeaders.map(h => {
                                                         const raw = studentScores[h.id] ?? "";
                                                         const originalRaw = studentOriginalScores[h.id] ?? "";
                                                         const n = raw === "" ? null : Number(raw);
@@ -1052,7 +1216,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                                         const changed = isPassFail ? passRaw !== originalPassRaw : raw !== originalRaw;
 
                                                         return (
-                                                            <td key={h.id} className={`px-2 py-1.5 text-center border-r border-slate-50 ${selectedHeaderId === h.id ? "bg-pink-50/20" : ""}`}>
+                                                            <td key={h.id} className={`px-2 py-1.5 text-center border-r border-slate-200 ${selectedHeaderId === h.id ? "bg-pink-50/40" : ""}`}>
                                                                 {isPassFail ? (
                                                                     <label className="inline-flex items-center justify-center cursor-pointer w-full h-full">
                                                                         <input
@@ -1102,7 +1266,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                                     })}
 
                                                     {!isPassFail && (
-                                                        <td className="px-4 py-2 text-center bg-pink-50/20 shadow-[inset_0_0_10px_rgba(16,185,129,0.05)]">
+                                                        <td className="border-l border-slate-300 px-4 py-2 text-center bg-pink-50/30 shadow-[inset_0_0_10px_rgba(16,185,129,0.05)]">
                                                             <span className={`text-sm font-black ${total > 0 ? "text-pink-700" : "text-slate-300"}`}>
                                                                 {total.toLocaleString()}%
                                                             </span>
@@ -1158,14 +1322,18 @@ export function ScoreInputFeature({ session }: { session: any }) {
                         <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
                                 <div>
-                                    <h3 className="text-lg font-bold text-slate-800">จัดการหัวข้อคะแนน</h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">{headers.length} หัวข้อคะแนนทั้งหมด</p>
+                                    <h3 className="text-2xl font-bold text-slate-800">จัดการหัวข้อคะแนน</h3>
+                                    <p className="text-sm text-slate-500 mt-0.5">
+                                        พบ {filteredManageHeaders.length} จาก {headers.length} หัวข้อคะแนน
+                                    </p>
                                 </div>
                                 <button
                                     onClick={() => {
                                         setShowManageModal(false);
                                         setShowAddHeader(false);
                                         setEditingHeaderId(null);
+                                        setManageCategoryFilter("all");
+                                        setManageAssessmentPeriodFilter("all");
                                     }}
                                     className="p-2 rounded-xl text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors"
                                 >
@@ -1175,7 +1343,78 @@ export function ScoreInputFeature({ session }: { session: any }) {
 
                             <div className="p-6 max-h-[60vh] overflow-y-auto">
                                 <div className="space-y-3">
-                                    {headers.map((h) => {
+                                    <div className="flex flex-col gap-1.5 rounded-2xl border border-slate-300 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <label htmlFor="manage-category-filter" className="text-base font-bold text-slate-700">
+                                            หมวดหมู่
+                                        </label>
+                                        <select
+                                            id="manage-category-filter"
+                                            value={manageCategoryFilter}
+                                            onChange={(event) => {
+                                                setManageCategoryFilter(event.target.value);
+                                                setManageAssessmentPeriodFilter("all");
+                                                setEditingHeaderId(null);
+                                                setDeletingHeaderId(null);
+                                            }}
+                                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-700 outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-200 sm:w-72"
+                                        >
+                                            <option value="all">ทั้งหมด ({headers.length})</option>
+                                            {categories.map((category) => {
+                                                const count = headers.filter((header) => header.category_id === category.id).length;
+                                                return (
+                                                    <option key={category.id} value={String(category.id)}>
+                                                        {category.grade_category_types?.type_name || category.name || "(ไม่มีชื่อ)"} ({count})
+                                                    </option>
+                                                );
+                                            })}
+                                            {headers.some((header) => !header.category_id) && (
+                                                <option value="uncategorized">
+                                                    ไม่ระบุหมวดหมู่ ({headers.filter((header) => !header.category_id).length})
+                                                </option>
+                                            )}
+                                        </select>
+                                    </div>
+
+                                    {manageCategoryUsesPeriod && (
+                                        <div className="flex flex-col gap-1.5 rounded-2xl border border-fuchsia-300 bg-fuchsia-50/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <label htmlFor="manage-period-filter" className="text-base font-bold text-fuchsia-800">
+                                                ช่วงคะแนนเก็บ
+                                            </label>
+                                            <select
+                                                id="manage-period-filter"
+                                                value={manageAssessmentPeriodFilter}
+                                                onChange={(event) => {
+                                                    setManageAssessmentPeriodFilter(event.target.value);
+                                                    setEditingHeaderId(null);
+                                                    setDeletingHeaderId(null);
+                                                }}
+                                                className="w-full rounded-xl border border-fuchsia-300 bg-white px-3 py-2 text-base text-slate-700 outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-200 sm:w-72"
+                                            >
+                                                <option value="all">
+                                                    ทั้งหมด ({headers.filter((header) => Number(header.category_id) === Number(manageCategoryFilter)).length})
+                                                </option>
+                                                {SCORE_PERIOD_OPTIONS.map((option) => {
+                                                    const count = headers.filter((header) =>
+                                                        Number(header.category_id) === Number(manageCategoryFilter)
+                                                        && header.assessment_period === option.value
+                                                    ).length;
+                                                    return (
+                                                        <option key={option.value} value={option.value}>
+                                                            {option.label} ({count})
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {filteredManageHeaders.length === 0 && (
+                                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                                            ไม่พบหัวข้อคะแนนตามตัวกรองนี้
+                                        </div>
+                                    )}
+
+                                    {filteredManageHeaders.map((h) => {
                                         const isEditing = editingHeaderId === h.id;
                                         if (isEditing) {
                                             return (
@@ -1202,7 +1441,11 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                                                     <span className="text-xs text-slate-500 font-medium">หมวดหมู่:</span>
                                                                     <select
                                                                         value={editCategoryId || ""}
-                                                                        onChange={(e) => setEditCategoryId(e.target.value ? Number(e.target.value) : null)}
+                                                                        onChange={(e) => {
+                                                                            const nextCategoryId = e.target.value ? Number(e.target.value) : null;
+                                                                            setEditCategoryId(nextCategoryId);
+                                                                            if (!isContinuousScoreCategory(nextCategoryId)) setEditAssessmentPeriod("");
+                                                                        }}
                                                                         className="flex-1 rounded-xl border border-red-200 px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-red-400 bg-white"
                                                                     >
                                                                         <option value="">(ไม่ระบุ)</option>
@@ -1211,6 +1454,21 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                                                         ))}
                                                                     </select>
                                                                 </div>
+                                                            </div>
+                                                        )}
+                                                        {!isPassFail && isContinuousScoreCategory(editCategoryId) && (
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs text-slate-500 font-medium">ช่วงคะแนนเก็บ:</span>
+                                                                <select
+                                                                    value={editAssessmentPeriod}
+                                                                    onChange={(e) => setEditAssessmentPeriod(e.target.value)}
+                                                                    className="flex-1 rounded-xl border border-red-200 px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-red-400 bg-white"
+                                                                >
+                                                                    <option value="">กรุณาเลือก</option>
+                                                                    {SCORE_PERIOD_OPTIONS.map((option) => (
+                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                    ))}
+                                                                </select>
                                                             </div>
                                                         )}
                                                     </div>
@@ -1226,6 +1484,11 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                                 <div>
                                                     <div className="font-bold text-slate-700">{h.title}</div>
                                                     {!isPassFail && <div className="text-xs text-slate-400 font-medium mt-1">เต็ม {toNum(h.max_score)} คะแนน</div>}
+                                                    {h.assessment_period && (
+                                                        <span className="inline-flex mt-1.5 rounded-full bg-pink-50 px-2 py-0.5 text-[11px] font-semibold text-pink-700">
+                                                            {formatScorePeriod(h.assessment_period)}
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     {deletingHeaderId === h.id ? (
@@ -1266,32 +1529,36 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                     })}
 
                                     {showAddHeader ? (
-                                        <div className="p-4 rounded-2xl border-2 border-dashed border-pink-400 bg-pink-50 space-y-3 animate-in fade-in zoom-in-95">
+                                        <div className="p-4 rounded-2xl border-2 border-dashed border-pink-400 bg-pink-50 space-y-3 animate-in fade-in zoom-in-95 text-base">
                                             <input
                                                 value={newTitle}
                                                 onChange={(e) => setNewTitle(e.target.value)}
-                                                className="w-full rounded-xl border border-pink-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-pink-400"
+                                                className="w-full rounded-xl border border-pink-200 px-3 py-2 text-base outline-none focus:ring-2 focus:ring-pink-400"
                                                 placeholder="กรอกชื่อหัวข้อใหม่ (เช่น เก็บหลังเรียนบทที่ 1)"
                                                 autoFocus
                                             />
                                             <div className="flex items-center gap-4">
                                                 {!isPassFail && (
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-slate-500 font-medium">คะแนนเต็ม:</span>
+                                                        <span className="text-slate-500 font-medium">คะแนนเต็ม:</span>
                                                         <input
                                                             type="number"
                                                             value={newMax === 0 ? "" : newMax}
                                                             onChange={(e) => setNewMax(toNum(e.target.value))}
-                                                            className="w-20 rounded-xl border border-pink-200 px-3 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-pink-400"
+                                                            className="w-20 rounded-xl border border-pink-200 px-3 py-1.5 text-center outline-none focus:ring-2 focus:ring-pink-400"
                                                         />
                                                     </div>
                                                 )}
                                                 <div className="flex items-center gap-2 flex-1">
-                                                    <span className="text-xs text-slate-500 font-medium">หมวดหมู่:</span>
+                                                    <span className="text-slate-500 font-medium">หมวดหมู่:</span>
                                                     <select
                                                         value={newCategoryId || ""}
-                                                        onChange={(e) => setNewCategoryId(e.target.value ? Number(e.target.value) : null)}
-                                                        className="flex-1 rounded-xl border border-pink-200 px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-pink-400 bg-white"
+                                                        onChange={(e) => {
+                                                            const nextCategoryId = e.target.value ? Number(e.target.value) : null;
+                                                            setNewCategoryId(nextCategoryId);
+                                                            if (!isContinuousScoreCategory(nextCategoryId)) setNewAssessmentPeriod("");
+                                                        }}
+                                                        className="flex-1 rounded-xl border border-pink-200 px-3 py-1.5 outline-none focus:ring-2 focus:ring-pink-400 bg-white"
                                                     >
                                                         <option value="">(ไม่ระบุ)</option>
                                                         {categories.map(cat => (
@@ -1300,14 +1567,26 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                                     </select>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-2 ml-auto">
-                                                <button onClick={handleAddHeader} disabled={addingHeader} className="px-4 py-2 rounded-xl bg-pink-500 text-white text-sm font-bold hover:bg-pink-600 disabled:opacity-50">เพิ่ม</button>
-                                                <button onClick={() => { setShowAddHeader(false); setNewTitle(""); }} className="px-4 py-2 rounded-xl bg-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-300">ยกเลิก</button>
+
+                                            <div className="flex gap-2 ml-auto justify-center items-center">
+                                                <button onClick={handleAddHeader} disabled={addingHeader || (isContinuousScoreCategory(newCategoryId) && !newAssessmentPeriod)} className="px-4 py-2 rounded-xl bg-pink-500 text-white font-bold hover:bg-pink-600 disabled:opacity-50">เพิ่ม</button>
+                                                <button onClick={() => { setShowAddHeader(false); setNewTitle(""); setNewAssessmentPeriod(""); }} className="px-4 py-2 rounded-xl bg-slate-200 text-slate-600 font-medium hover:bg-slate-300">ยกเลิก</button>
                                             </div>
                                         </div>
                                     ) : (
                                         <button
-                                            onClick={() => setShowAddHeader(true)}
+                                            onClick={() => {
+                                                setShowAddHeader(true);
+                                                if (/^\d+$/.test(manageCategoryFilter)) {
+                                                    const categoryId = Number(manageCategoryFilter);
+                                                    setNewCategoryId(categoryId);
+                                                    if (isContinuousScoreCategory(categoryId) && manageAssessmentPeriodFilter !== "all") {
+                                                        setNewAssessmentPeriod(manageAssessmentPeriodFilter);
+                                                    } else {
+                                                        setNewAssessmentPeriod("");
+                                                    }
+                                                }
+                                            }}
                                             className="w-full flex items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-slate-200 text-slate-400 hover:border-pink-400 hover:text-pink-600 hover:bg-pink-50 transition-all"
                                         >
                                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -1323,6 +1602,8 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                         setShowManageModal(false);
                                         setShowAddHeader(false);
                                         setEditingHeaderId(null);
+                                        setManageCategoryFilter("all");
+                                        setManageAssessmentPeriodFilter("all");
                                     }}
                                     className="px-6 py-2 rounded-xl bg-slate-800 text-white text-sm font-bold hover:bg-slate-700 transition-all hover:shadow-lg active:scale-95"
                                 >

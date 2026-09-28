@@ -1,19 +1,18 @@
 import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
+import { getAuthenticatedTeacherId } from '@/app/api/teacher/_utils';
 
 export async function GET(request: Request) {
     try {
         const session = await getSession() as any;
         if (!session || session.role !== 'teacher') return errorResponse('Unauthorized', 401);
 
-        const { searchParams } = new URL(request.url);
-        const teacher_id = searchParams.get('teacher_id') ? Number(searchParams.get('teacher_id')) : null;
+        const teacher_id = await getAuthenticatedTeacherId();
+        if (!teacher_id) return errorResponse('Unauthorized', 401);
 
         // Find teacher record linked to this user
-        const teacher = await prisma.teachers.findFirst({
-            where: teacher_id ? { id: teacher_id } : { user_id: session.id },
-        });
+        const teacher = await prisma.teachers.findUnique({ where: { id: teacher_id } });
 
         if (!teacher) return errorResponse('Teacher not found', 404);
 
@@ -58,7 +57,7 @@ export async function GET(request: Request) {
                     subject_code: assign.subjects.subject_code,
                     subject_name: assign.subjects.subject_name,
                     credit: assign.subjects.credit,
-                    class_level: assign.classrooms?.levels?.name ?? '-',
+                    class_level: assign.classrooms?.levels?.grade_level_name ?? '-',
                     classroom: assign.classrooms?.room_name ?? '-',
                     day_id: sched.day_id,
                     day_name: sched.day_of_weeks?.day_name_th ?? '-',

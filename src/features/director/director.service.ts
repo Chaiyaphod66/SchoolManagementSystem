@@ -163,6 +163,101 @@ async function resolveClassroomIdFromPayload(data: any) {
     return classroom.id;
 }
 
+async function resolveHomeroomTeacherId(classroomId: number, semesterId: number) {
+    const semester = await prisma.semesters.findUnique({
+        where: { id: semesterId },
+        select: { academic_year_id: true },
+    });
+    if (!semester) throw new Error('Semester not found');
+
+    const advisor = await prisma.classroom_assignments.findUnique({
+        where: {
+            classroom_id_academic_year_id: {
+                classroom_id: classroomId,
+                academic_year_id: semester.academic_year_id,
+            },
+        },
+        select: { teacher_id: true },
+    });
+    if (!advisor) {
+        throw new Error('กรุณากำหนดครูประจำชั้นของห้องนี้ในปีการศึกษาที่เลือกก่อน');
+    }
+    return advisor.teacher_id;
+}
+
+async function syncClassroomSubjectsForYear(
+    classroomId: number,
+    academicYearId: number,
+    teacherId: number
+) {
+    const [classroom, semesters] = await Promise.all([
+        prisma.classrooms.findUnique({
+            where: { id: classroomId },
+            select: {
+                grade_level_id: true,
+                levels: { select: { grade_level_name: true } },
+            },
+        }),
+        prisma.semesters.findMany({
+            where: { academic_year_id: academicYearId },
+            select: { id: true },
+        }),
+    ]);
+    if (!classroom) throw new Error('Classroom not found');
+
+    const subjects = await prisma.subjects.findMany({
+        where: { level_id: classroom.grade_level_id },
+        select: { id: true, grade_scale_group_id: true },
+    });
+    if (subjects.length === 0 || semesters.length === 0) return;
+
+    await prisma.teaching_assignments.createMany({
+        data: semesters.flatMap((semester) =>
+            subjects.map((subject) => ({
+                subject_id: subject.id,
+                teacher_id: teacherId,
+                classroom_id: classroomId,
+                semester_id: semester.id,
+                grade_scale_group_id: subject.grade_scale_group_id,
+                status: 'open',
+            }))
+        ),
+        skipDuplicates: true,
+    });
+
+    await prisma.teaching_assignments.updateMany({
+        where: {
+            classroom_id: classroomId,
+            semester_id: { in: semesters.map((semester) => semester.id) },
+        },
+        data: { teacher_id: teacherId },
+    });
+}
+
+async function syncSubjectToAssignedClassrooms(subjectId: number) {
+    const subject = await prisma.subjects.findUnique({
+        where: { id: subjectId },
+        select: { level_id: true },
+    });
+    if (!subject?.level_id) return;
+
+    const advisors = await prisma.classroom_assignments.findMany({
+        where: { classrooms: { grade_level_id: subject.level_id } },
+        select: {
+            classroom_id: true,
+            academic_year_id: true,
+            teacher_id: true,
+        },
+    });
+    for (const advisor of advisors) {
+        await syncClassroomSubjectsForYear(
+            advisor.classroom_id,
+            advisor.academic_year_id,
+            advisor.teacher_id
+        );
+    }
+}
+
 async function resolveProjectExpenseSemesterId(projectId: number, expenseDate: Date) {
     const project = await prisma.projects.findUnique({
         where: { id: projectId },
@@ -275,7 +370,9 @@ export const DirectorService = {
     // --- Dashboard Summary ---
     async getSummary() {
         const students = await prisma.students.count();
-        const teachers = await prisma.teachers.count();
+        const teachers = await prisma.teachers.count({
+            where: { users: { roles: { role_name: 'TEACHER' } } },
+        });
         const subjects = await prisma.subjects.count();
         const activities = await prisma.events.count();
 
@@ -291,7 +388,9 @@ export const DirectorService = {
 
     // --- Teachers CRUD ---
     async getTeachers(search?: string) {
-        const where: any = {};
+        const where: any = {
+            users: { roles: { role_name: 'TEACHER' } },
+        };
         if (search) {
             const parts = search.trim().split(/\s+/);
             if (parts.length > 1) {
@@ -346,6 +445,8 @@ export const DirectorService = {
 
     async createTeacher(data: any) {
         const hash = await bcrypt.hash(data.password || '1234', 10);
+        const teacherRole = await prisma.roles.findUnique({ where: { role_name: 'TEACHER' } });
+        if (!teacherRole) throw new Error('ไม่พบบทบาท TEACHER');
 
         // Create user first
         const user = await prisma.users.create({
@@ -353,7 +454,7 @@ export const DirectorService = {
                 username: data.teacher_code,
                 email: data.email || `${data.teacher_code}@school.local`,
                 password_hash: hash,
-                role_id: data.role_id || 2, // Teacher role
+                role_id: teacherRole.id,
             }
         });
 
@@ -430,7 +531,9 @@ export const DirectorService = {
         if (filters?.class_level || filters?.room) {
             where.classroom_students = { some: { classrooms: {} } };
             if (filters.class_level) {
-                where.classroom_students.some.classrooms.levels = { name: { contains: filters.class_level.trim(), mode: 'insensitive' } };
+                where.classroom_students.some.classrooms.levels = {
+                    grade_level_name: { contains: filters.class_level.trim(), mode: 'insensitive' },
+                };
             }
             if (filters.room) {
                 where.classroom_students.some.classrooms.room_name = { contains: filters.room.trim(), mode: 'insensitive' };
@@ -478,6 +581,8 @@ export const DirectorService = {
 
     async createStudent(data: any) {
         const hash = await bcrypt.hash(data.password || '1234', 10);
+        const studentRole = await prisma.roles.findUnique({ where: { role_name: 'STUDENT' } });
+        if (!studentRole) throw new Error('ไม่พบบทบาท STUDENT');
 
         // Create user first
         const user = await prisma.users.create({
@@ -485,7 +590,7 @@ export const DirectorService = {
                 username: data.student_code,
                 email: data.email || `${data.student_code}@school.local`,
                 password_hash: hash,
-                role_id: data.role_id || 1, // Student role
+                role_id: studentRole.id,
             }
         });
 
@@ -576,8 +681,13 @@ export const DirectorService = {
 
     async deleteStudent(id: number) {
         const student = await prisma.students.findUnique({ where: { id }, select: { user_id: true } });
-        // Delete related records via Raw SQL if models are missing from Prisma
-        await prisma.enrollments.deleteMany({ where: { student_id: id } });
+        await prisma.student_scores.deleteMany({ where: { student_id: id } });
+        await prisma.final_grades.deleteMany({ where: { student_id: id } });
+        await prisma.attendance_records.deleteMany({ where: { student_id: id } });
+        await prisma.behavior_records.deleteMany({ where: { student_id: id } });
+        await prisma.health_checkup_records.deleteMany({ where: { student_id: id } });
+        await prisma.student_daily_health_records.deleteMany({ where: { student_id: id } });
+        await prisma.classroom_students.deleteMany({ where: { student_id: id } });
         await prisma.students.delete({ where: { id } });
         if (student?.user_id) {
             await prisma.users.delete({ where: { id: student.user_id } }).catch(() => { });
@@ -647,112 +757,100 @@ export const DirectorService = {
             where.learning_subject_group_id = Number(filters.department_id);
         }
         if (filters?.level) {
-            // Regex-based fallback for level filtering (Thai school convention)
-            // ม.1 -> 21, ม.2 -> 22, ม.3 -> 23, ม.4 -> 31, ม.5 -> 32, ม.6 -> 33
-            let codePrefix = "";
-            if (filters.level === "ม.1") codePrefix = "21";
-            else if (filters.level === "ม.2") codePrefix = "22";
-            else if (filters.level === "ม.3") codePrefix = "23";
-            else if (filters.level === "ม.4") codePrefix = "31";
-            else if (filters.level === "ม.5") codePrefix = "32";
-            else if (filters.level === "ม.6") codePrefix = "33";
-
-            where.OR = [
-                {
-                    teaching_assignments: {
-                        some: {
-                            classrooms: {
-                                levels: { name: filters.level }
-                            }
-                        }
-                    }
-                }
-            ];
-
-            if (codePrefix) {
-                // Add code-based check if teaching assignment doesn't exist yet
-                where.OR.push({ 
-                    subject_code: { 
-                        contains: codePrefix, 
-                        mode: 'insensitive' 
-                    } 
-                });
-            }
+            const level = await prisma.grade_level.findFirst({
+                where: { grade_level_name: filters.level },
+                select: { id: true },
+            });
+            where.level_id = level?.id ?? -1;
         }
         if (filters?.group) {
-            where.learning_subject_groups = {
-                group_name: filters.group
-            };
+            where.learning_subject_groups = { group_name: filters.group };
         }
         if (filters?.category) {
-            where.subject_categories = {
-                category_name: filters.category
-            };
+            where.subject_categories = { category_name: filters.category };
         }
 
-        const rows = await (prisma.subjects as any).findMany({
+        const rows = await prisma.subjects.findMany({
             where,
             include: {
                 learning_subject_groups: true,
                 subject_categories: true,
-                evaluation_types: true,
-                teaching_assignments: {
-                    include: { classrooms: { include: { levels: true } } },
-                    take: 1
-                }
             },
-            orderBy: { subject_code: 'asc' }
+            orderBy: { subject_code: 'asc' },
         });
+        const levels = await prisma.grade_level.findMany({
+            select: { id: true, grade_level_name: true },
+        });
+        const levelNames = new Map(levels.map(level => [level.id, level.grade_level_name || '']));
 
-        const deriveLevelFromCode = (code: string) => {
-            if (!code) return '';
-            // Match pattern like ท21101 (Thai) or EN21101 (English)
-            // The first digit of the number part indicates the level
-            const match = code.match(/[A-Zก-ฮ]+(\d)(\d)/i);
-            if (match) {
-                const type = match[1]; // 2=Secondary 1-3, 3=Secondary 4-6
-                const level = match[2];
-                if (type === '2') return `ม.${level}`;
-                if (type === '3') return `ม.${Number(level) + 3}`;
-            }
-            return '';
-        };
-
-        return (rows as any[]).map(r => ({
-            ...r,
-            name: r.subject_name,
-            subject_type: r.subject_categories?.category_name || '',
-            subject_group: r.learning_subject_groups?.group_name || '',
-            level: (r as any).level || getGradeLevelName((r.teaching_assignments?.[0]?.classrooms as any)?.levels) || deriveLevelFromCode(r.subject_code),
+        return rows.map(row => ({
+            ...row,
+            name: row.subject_name,
+            subject_type: row.subject_categories?.category_name || '',
+            subject_group: row.learning_subject_groups?.group_name || '',
+            level: row.level_id ? levelNames.get(row.level_id) || '' : '',
         }));
     },
 
     async createSubject(data: any) {
         const lastSubject = await prisma.subjects.findFirst({ orderBy: { id: 'desc' } });
         const newSubjectId = (lastSubject?.id || 0) + 1;
+        const [group, category, level] = await Promise.all([
+            data.learning_subject_group_id
+                ? null
+                : prisma.learning_subject_groups.findFirst({ where: { group_name: data.subject_group || '' } }),
+            data.subject_categories_id
+                ? null
+                : prisma.subject_categories.findFirst({ where: { category_name: data.subject_type || '' } }),
+            data.level_id
+                ? null
+                : prisma.grade_level.findFirst({ where: { grade_level_name: data.level || '' } }),
+        ]);
 
-        return prisma.subjects.create({
+        const created = await prisma.subjects.create({
             data: {
                 id: newSubjectId,
                 subject_code: data.subject_code,
-                subject_name: data.subject_name,
-                credit: data.credit || 1.0,
-                // level: data.class_level || data.level || null, // REMOVED until DB is fixed
-                learning_subject_group_id: data.learning_subject_group_id || null,
-                subject_categories_id: data.subject_categories_id || null,
-                evaluation_type_id: data.evaluation_type_id || null,
-            }
+                subject_name: data.subject_name || data.name,
+                credit: data.credit ?? 1.0,
+                level_id: data.level_id ? Number(data.level_id) : level?.id || null,
+                learning_subject_group_id: data.learning_subject_group_id ? Number(data.learning_subject_group_id) : group?.id || null,
+                subject_categories_id: data.subject_categories_id ? Number(data.subject_categories_id) : category?.id || null,
+            },
         });
+        await syncSubjectToAssignedClassrooms(created.id);
+        return created;
     },
 
     async updateSubject(id: number, data: any) {
         const updateData: any = {};
-        if (data.subject_name) updateData.subject_name = data.subject_name;
+        if (data.subject_code) updateData.subject_code = data.subject_code;
+        if (data.subject_name || data.name) updateData.subject_name = data.subject_name || data.name;
         if (data.credit !== undefined) updateData.credit = data.credit;
-        if (data.learning_subject_group_id !== undefined) updateData.learning_subject_group_id = data.learning_subject_group_id;
-        if (data.subject_categories_id !== undefined) updateData.subject_categories_id = data.subject_categories_id;
-        // if (data.class_level !== undefined || data.level !== undefined) updateData.level = data.class_level || data.level; // REMOVED until DB is fixed
-        return prisma.subjects.update({ where: { id }, data: updateData });
+        if (data.learning_subject_group_id !== undefined) {
+            updateData.learning_subject_group_id = data.learning_subject_group_id ? Number(data.learning_subject_group_id) : null;
+        }
+        if (data.subject_categories_id !== undefined) {
+            updateData.subject_categories_id = data.subject_categories_id ? Number(data.subject_categories_id) : null;
+        }
+        if (data.level_id !== undefined) {
+            updateData.level_id = data.level_id ? Number(data.level_id) : null;
+        }
+        if (data.subject_group !== undefined) {
+            const group = await prisma.learning_subject_groups.findFirst({ where: { group_name: data.subject_group } });
+            updateData.learning_subject_group_id = group?.id || null;
+        }
+        if (data.subject_type !== undefined) {
+            const category = await prisma.subject_categories.findFirst({ where: { category_name: data.subject_type } });
+            updateData.subject_categories_id = category?.id || null;
+        }
+        if (data.level !== undefined) {
+            const level = await prisma.grade_level.findFirst({ where: { grade_level_name: data.level } });
+            updateData.level_id = level?.id || null;
+        }
+        const updated = await prisma.subjects.update({ where: { id }, data: updateData });
+        await syncSubjectToAssignedClassrooms(updated.id);
+        return updated;
     },
 
     async deleteSubject(id: number) {
@@ -792,7 +890,6 @@ export const DirectorService = {
                     },
                     orderBy: [{ day_id: 'asc' }, { period_id: 'asc' }],
                 },
-                enrollments: { select: { id: true } },
             },
             orderBy: [{ semester_id: 'desc' }, { id: 'desc' }]
         }).then((rows) => rows.map((row) => {
@@ -817,12 +914,28 @@ export const DirectorService = {
 
     async createSection(data: any) {
         const subject_id = Number(data?.subject_id);
-        const teacher_id = Number(data?.teacher_id);
         if (!Number.isFinite(subject_id) || subject_id <= 0) throw new Error('กรุณาเลือกรายวิชา');
-        if (!Number.isFinite(teacher_id) || teacher_id <= 0) throw new Error('กรุณาเลือกผู้สอน');
 
         const semester_id = await resolveSemesterIdFromPayload(data);
         const classroom_id = await resolveClassroomIdFromPayload(data);
+        if (!classroom_id) throw new Error('กรุณาเลือกระดับชั้น');
+
+        const [teacher_id, subject, classroom] = await Promise.all([
+            resolveHomeroomTeacherId(classroom_id, semester_id),
+            prisma.subjects.findUnique({
+                where: { id: subject_id },
+                select: { level_id: true, grade_scale_group_id: true },
+            }),
+            prisma.classrooms.findUnique({
+                where: { id: classroom_id },
+                select: { grade_level_id: true },
+            }),
+        ]);
+        if (!subject) throw new Error('ไม่พบรายวิชา');
+        if (!classroom) throw new Error('ไม่พบห้องเรียน');
+        if (subject.level_id && subject.level_id !== classroom.grade_level_id) {
+            throw new Error('รายวิชานี้ไม่ได้อยู่ในระดับชั้นของห้องที่เลือก');
+        }
 
         const created = await prisma.teaching_assignments.create({
             data: {
@@ -830,8 +943,8 @@ export const DirectorService = {
                 teacher_id,
                 semester_id,
                 classroom_id,
-                capacity: data.capacity || null,
                 status: data.status || 'open',
+                grade_scale_group_id: subject.grade_scale_group_id,
             }
         });
 
@@ -845,11 +958,6 @@ export const DirectorService = {
             const subject_id = Number(data.subject_id);
             if (!Number.isFinite(subject_id) || subject_id <= 0) throw new Error('subject_id ไม่ถูกต้อง');
             updateData.subject_id = subject_id;
-        }
-        if (data.teacher_id !== undefined) {
-            const teacher_id = Number(data.teacher_id);
-            if (!Number.isFinite(teacher_id) || teacher_id <= 0) throw new Error('teacher_id ไม่ถูกต้อง');
-            updateData.teacher_id = teacher_id;
         }
         if (
             data.classroom_id !== undefined ||
@@ -865,8 +973,26 @@ export const DirectorService = {
         ) {
             updateData.semester_id = await resolveSemesterIdFromPayload(data);
         }
-        if (data.capacity !== undefined) updateData.capacity = data.capacity;
         if (data.status) updateData.status = data.status;
+
+        const current = await prisma.teaching_assignments.findUnique({
+            where: { id },
+            select: { classroom_id: true, semester_id: true, subject_id: true },
+        });
+        if (!current) throw new Error('ไม่พบรายวิชาประจำห้อง');
+        const nextClassroomId = updateData.classroom_id ?? current.classroom_id;
+        const nextSemesterId = updateData.semester_id ?? current.semester_id;
+        const nextSubjectId = updateData.subject_id ?? current.subject_id;
+        const [teacherId, subject, classroom] = await Promise.all([
+            resolveHomeroomTeacherId(nextClassroomId, nextSemesterId),
+            prisma.subjects.findUnique({ where: { id: nextSubjectId }, select: { level_id: true } }),
+            prisma.classrooms.findUnique({ where: { id: nextClassroomId }, select: { grade_level_id: true } }),
+        ]);
+        if (!subject || !classroom) throw new Error('ไม่พบรายวิชาหรือห้องเรียน');
+        if (subject.level_id && subject.level_id !== classroom.grade_level_id) {
+            throw new Error('รายวิชานี้ไม่ได้อยู่ในระดับชั้นของห้องที่เลือก');
+        }
+        updateData.teacher_id = teacherId;
 
         const updated = await prisma.teaching_assignments.update({ where: { id }, data: updateData });
         await upsertSingleClassSchedule(id, data);
@@ -874,30 +1000,14 @@ export const DirectorService = {
     },
 
     async deleteSection(id: number) {
-        // Delete related records
-        await prisma.student_scores.deleteMany({
-            where: { assessment_items: { grade_categories: { teaching_assignment_id: id } } }
-        });
-        await prisma.assessment_items.deleteMany({
-            where: { grade_categories: { teaching_assignment_id: id } }
-        });
-        await prisma.grade_categories.deleteMany({ where: { teaching_assignment_id: id } });
-        await prisma.attendance_records.deleteMany({
-            where: { attendance_sessions: { teaching_assignment_id: id } }
-        });
-        await prisma.attendance_sessions.deleteMany({ where: { teaching_assignment_id: id } });
-        await prisma.class_schedules.deleteMany({ where: { teaching_assignment_id: id } });
-        await prisma.final_grades.deleteMany({
-            where: { enrollments: { teaching_assignment_id: id } }
-        });
-        await prisma.enrollments.deleteMany({ where: { teaching_assignment_id: id } });
         return prisma.teaching_assignments.delete({ where: { id } });
     },
 
     // --- Homeroom teachers (classroom_assignments is the source of truth) ---
     async getAdvisors(filters?: { year?: number; semester?: number; class_level?: string; room?: string }) {
         const term = await resolveAdvisorTerm(filters?.year, filters?.semester);
-        const where: any = {};
+        const academicYearId = await resolveAcademicYearIdFromPayload({ year: term.year });
+        const where: any = { academic_year_id: academicYearId };
         
         if (filters?.class_level || filters?.room) {
             where.classrooms = {};
@@ -930,13 +1040,7 @@ export const DirectorService = {
             orderBy: [{ academic_year_id: 'desc' }, { id: 'desc' }],
         });
 
-        // A primary homeroom teacher belongs to one room permanently. Older yearly
-        // rows may still exist, so expose only the newest assignment per teacher.
-        const latestRows = rows.filter((row, index, all) =>
-            all.findIndex((candidate) => candidate.teacher_id === row.teacher_id) === index
-        );
-
-        return latestRows
+        return rows
             .map((row) => mapAdvisorRecord(row, term))
             .sort((a, b) =>
                 String(a.class_level || '').localeCompare(String(b.class_level || ''), 'th')
@@ -973,11 +1077,11 @@ export const DirectorService = {
 
         const duplicate = await prisma.classroom_assignments.findFirst({
             where: {
-                OR: [{ teacher_id }, { classroom_id }],
+                classroom_id,
+                academic_year_id,
             },
-            select: { id: true, teacher_id: true, classroom_id: true },
+            select: { id: true },
         });
-        if (duplicate?.teacher_id === teacher_id) throw new Error('Teacher already has a homeroom classroom');
         if (duplicate) throw new Error('Classroom already has a homeroom teacher');
 
         const created = await prisma.classroom_assignments.create({
@@ -993,6 +1097,7 @@ export const DirectorService = {
             },
         });
 
+        await syncClassroomSubjectsForYear(classroom_id, academic_year_id, teacher_id);
         return mapAdvisorRecord(created, term);
     },
 
@@ -1020,15 +1125,16 @@ export const DirectorService = {
             classroom: room,
         });
         if (!classroom_id) throw new Error('Classroom not found');
+        const academic_year_id = await resolveAcademicYearIdFromPayload({ year: term.year });
 
         const duplicate = await prisma.classroom_assignments.findFirst({
             where: {
                 id: { not: nid },
-                OR: [{ teacher_id }, { classroom_id }],
+                classroom_id,
+                academic_year_id,
             },
-            select: { id: true, teacher_id: true, classroom_id: true },
+            select: { id: true },
         });
-        if (duplicate?.teacher_id === teacher_id) throw new Error('Teacher already has a homeroom classroom');
         if (duplicate) throw new Error('Classroom already has a homeroom teacher');
 
         const updated = await prisma.classroom_assignments.update({
@@ -1036,6 +1142,7 @@ export const DirectorService = {
             data: {
                 teacher_id,
                 classroom_id,
+                academic_year_id,
             },
             include: {
                 teachers: { include: { name_prefixes: true } },
@@ -1044,6 +1151,11 @@ export const DirectorService = {
             },
         });
 
+        await syncClassroomSubjectsForYear(
+            classroom_id,
+            updated.academic_year_id,
+            teacher_id
+        );
         return mapAdvisorRecord(updated, term);
     },
 
@@ -1255,37 +1367,8 @@ export const DirectorService = {
     },
 
     async deleteActivity(id: number) {
-        // Manually delete related records to avoid foreign key constraints
-        // We use catch on all to ensure we try everything even if some tables don't exist
-        await prisma.event_participants.deleteMany({ where: { event_id: id } }).catch(() => {});
-        await prisma.event_targets.deleteMany({ where: { event_id: id } }).catch(() => {});
-        await prisma.event_evaluations.deleteMany({ where: { event_id: id } }).catch(() => {});
-        await prisma.evaluation_responses.deleteMany({ where: { target_activity_id: id } }).catch(() => {});
-        
-        // Brute force other potential hidden/legacy tables
-        const tables = [
-            'activity_evaluation_link',
-            'activity_evaluation_results',
-            'event_evaluations', // redundant but safe
-            'event_attendance',
-            'activity_participants',
-            'activity_targets',
-            'event_responses',
-            'activity_evaluation'
-        ];
-        
-        for (const table of tables) {
-            try {
-                // Try event_id
-                await prisma.$executeRawUnsafe(`DELETE FROM ${table} WHERE event_id = $1`, id).catch(() => {});
-                // Try activity_id
-                await prisma.$executeRawUnsafe(`DELETE FROM ${table} WHERE activity_id = $1`, id).catch(() => {});
-            } catch (e) {}
-        }
-        
-        // Use raw SQL to delete from events to bypass Prisma Client sync issues 
-        // (specifically the missing evaluation_form_id column)
-        return prisma.$executeRawUnsafe(`DELETE FROM events WHERE id = $1`, id);
+        // Participants, targets, evaluations, and responses use ON DELETE CASCADE.
+        return prisma.events.delete({ where: { id } });
     },
 
     // --- Projects ---
@@ -1796,7 +1879,13 @@ export const DirectorService = {
                     s.subject_code, s.subject_name,
                     COUNT(DISTINCT er.id)::int as responses_count,
                     AVG(ea.score_value::float) as avg_score,
-                    (SELECT COUNT(*)::int FROM enrollments en WHERE en.teaching_assignment_id = ta.id) as total_expected
+                    (
+                        SELECT COUNT(*)::int
+                        FROM classroom_students cs
+                        JOIN semesters expected_semester ON expected_semester.id = ta.semester_id
+                        WHERE cs.classroom_id = ta.classroom_id
+                          AND cs.academic_year_id = expected_semester.academic_year_id
+                    ) as total_expected
                 FROM evaluation_responses er
                 JOIN teaching_assignments ta ON er.target_subject_id = ta.id
                 JOIN teachers t ON ta.teacher_id = t.id
@@ -1828,7 +1917,7 @@ export const DirectorService = {
             let classLevelFilter = '';
             let roomFilter = '';
             if (filters?.class_level) {
-                classLevelFilter = `AND lv.name = '${filters.class_level.replace(/'/g, "''")}'`;
+                classLevelFilter = `AND lv.grade_level_name = '${filters.class_level.replace(/'/g, "''")}'`;
             }
             if (filters?.room) {
                 roomFilter = `AND cr.room_name LIKE '%${filters.room.replace(/'/g, "''")}%'`;
@@ -1838,7 +1927,7 @@ export const DirectorService = {
                 SELECT 
                     t.id as teacher_id,
                     t.first_name, t.last_name, t.teacher_code,
-                    MAX(lv.name) as class_level,
+                    MAX(lv.grade_level_name) as class_level,
                     MAX(cr.room_name) as room_name,
                     COUNT(DISTINCT er.id)::int as responses_count,
                     AVG(ea.score_value::float) as avg_score,
@@ -1846,12 +1935,14 @@ export const DirectorService = {
                         SELECT COUNT(*)::int 
                         FROM classroom_students cs2
                         JOIN classrooms cr2 ON cr2.id = cs2.classroom_id
-                        WHERE cr2.advisor_teacher_id = t.id
+                        JOIN classroom_assignments ca2 ON ca2.classroom_id = cr2.id
+                        WHERE ca2.teacher_id = t.id
                     ) as total_expected
                 FROM evaluation_responses er
                 JOIN teachers t ON er.target_teacher_id = t.id
-                JOIN classrooms cr ON cr.advisor_teacher_id = t.id
-                JOIN levels lv ON lv.id = cr.level_id
+                JOIN classroom_assignments ca ON ca.teacher_id = t.id
+                JOIN classrooms cr ON cr.id = ca.classroom_id
+                JOIN grade_level lv ON lv.id = cr.grade_level_id
                 LEFT JOIN evaluation_answers ea ON ea.response_id = er.id AND ea.score_value IS NOT NULL
                 WHERE er.target_teacher_id IS NOT NULL
                   AND er.target_student_id IS NULL
@@ -1890,7 +1981,13 @@ export const DirectorService = {
                     s.subject_code, s.subject_name,
                     COUNT(DISTINCT er.target_student_id)::int as responses_count,
                     AVG(ea.score_value::float) as avg_score,
-                    (SELECT COUNT(*)::int FROM enrollments en WHERE en.teaching_assignment_id = ta.id) as total_expected
+                    (
+                        SELECT COUNT(*)::int
+                        FROM classroom_students cs
+                        JOIN semesters expected_semester ON expected_semester.id = ta.semester_id
+                        WHERE cs.classroom_id = ta.classroom_id
+                          AND cs.academic_year_id = expected_semester.academic_year_id
+                    ) as total_expected
                 FROM evaluation_responses er
                 JOIN teaching_assignments ta ON er.target_subject_id = ta.id
                 JOIN subjects s ON ta.subject_id = s.id
@@ -1921,7 +2018,7 @@ export const DirectorService = {
             let classLevelFilter = '';
             let roomFilter = '';
             if (filters?.class_level) {
-                classLevelFilter = `AND lv.name = '${filters.class_level.replace(/'/g, "''")}'`;
+                classLevelFilter = `AND lv.grade_level_name = '${filters.class_level.replace(/'/g, "''")}'`;
             }
             if (filters?.room) {
                 roomFilter = `AND cr.room_name LIKE '%${filters.room.replace(/'/g, "''")}%'`;
@@ -1930,7 +2027,7 @@ export const DirectorService = {
             const rows: any[] = await prisma.$queryRawUnsafe(`
                 SELECT 
                     cr.id as classroom_id,
-                    lv.name as class_level,
+                    lv.grade_level_name as class_level,
                     cr.room_name as room,
                     COUNT(DISTINCT er.target_student_id)::int as responses_count,
                     AVG(ea.score_value::float) as avg_score,
@@ -1940,10 +2037,10 @@ export const DirectorService = {
                 LEFT JOIN (
                     SELECT DISTINCT ON (student_id) student_id, classroom_id
                     FROM classroom_students
-                    ORDER BY student_id, academic_year DESC
+                    ORDER BY student_id, academic_year_id DESC
                 ) cs ON cs.student_id = st.id
                 LEFT JOIN classrooms cr ON cr.id = cs.classroom_id
-                LEFT JOIN levels lv ON lv.id = cr.level_id
+                LEFT JOIN grade_level lv ON lv.id = cr.grade_level_id
                 LEFT JOIN evaluation_answers ea ON ea.response_id = er.id AND ea.score_value IS NOT NULL
                 WHERE er.target_student_id IS NOT NULL
                   AND er.target_subject_id IS NULL
@@ -1952,8 +2049,8 @@ export const DirectorService = {
                   ${semWhere}
                   ${classLevelFilter}
                   ${roomFilter}
-                GROUP BY cr.id, lv.name, cr.room_name
-                ORDER BY lv.name, cr.room_name
+                GROUP BY cr.id, lv.grade_level_name, cr.room_name
+                ORDER BY lv.grade_level_name, cr.room_name
             `);
 
             return rows.map((r: any) => ({
@@ -1986,7 +2083,8 @@ export const DirectorService = {
         classrooms.forEach(c => {
             const levelName = getGradeLevelName((c as any).levels);
             const roomOnly = roomOnlyLabel(levelName, c.room_name || '');
-            if (roomOnly) rooms.add(roomOnly);
+            const classroomLabel = roomOnly || String(c.room_name || levelName).trim();
+            if (classroomLabel) rooms.add(classroomLabel);
         });
 
         return Array.from(rooms).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));

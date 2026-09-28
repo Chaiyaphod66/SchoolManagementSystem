@@ -460,7 +460,7 @@ function CrudFeature({
                     <div className="flex flex-col sm:flex-row gap-3">
                         {customFilters.map((filter: { key: string; label: string; options: (items: any[]) => string[] }) => (
                             <div key={filter.key} className="flex-1">
-                                <label className="text-xs text-slate-500 block mb-1">{filter.label}</label>
+                                <label className="text-base font-medium text-slate-600 block mb-1">{filter.label}</label>
                                 <select
                                     value={filterValues[filter.key] ?? ""}
                                     onChange={(e) => setFilterValues((prev) => ({ ...prev, [filter.key]: e.target.value }))}
@@ -836,13 +836,13 @@ export function StudentsFeature() {
 }
 
 export function SubjectsFeature() {
-    const [groupOptions, setGroupOptions] = useState<string[]>([]);
-    const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+    const [groupOptions, setGroupOptions] = useState<any[]>([]);
+    const [categoryOptions, setCategoryOptions] = useState<any[]>([]);
     const [levelOptions, setLevelOptions] = useState<string[]>([]);
 
     useEffect(() => {
-        DirectorApiService.getLearningSubjectGroups().then(rows => setGroupOptions(rows.map(r => r.group_name)));
-        DirectorApiService.getSubjectCategories().then(rows => setCategoryOptions(rows.map(r => r.category_name)));
+        DirectorApiService.getLearningSubjectGroups().then(setGroupOptions);
+        DirectorApiService.getSubjectCategories().then(setCategoryOptions);
         DirectorApiService.getGradeLevels().then(setLevelOptions);
     }, []);
 
@@ -864,12 +864,12 @@ export function SubjectsFeature() {
                 {
                     key: "subject_group",
                     label: "กลุ่มสาระ",
-                    options: () => groupOptions.sort((a, b) => a.localeCompare(b, "th")),
+                    options: () => groupOptions.map(row => row.group_name).sort((a, b) => a.localeCompare(b, "th")),
                 },
                 {
                     key: "subject_type",
                     label: "ประเภท",
-                    options: () => categoryOptions.sort((a, b) => a.localeCompare(b, "th")),
+                    options: () => categoryOptions.map(row => row.category_name).sort((a, b) => a.localeCompare(b, "th")),
                 },
                 {
                     key: "level",
@@ -877,46 +877,30 @@ export function SubjectsFeature() {
                     options: () => levelOptions.sort((a, b) => a.localeCompare(b, "th")),
                 },
             ]}
-            createFields={(items) => {
-                const uniqueValues = (key: string) =>
-                    Array.from(new Set(
-                        (items || [])
-                            .map((x: any) => (x[key] ?? "").toString().trim())
-                            .filter((v: string) => v.length > 0)
-                    )).sort((a, b) => a.localeCompare(b, "th"));
-
-                const subjectTypeOptions = uniqueValues("subject_type");
-                const subjectGroupOptions = uniqueValues("subject_group");
-                const levelOptionsLocal = uniqueValues("level");
+            createFields={() => {
+                const subjectTypeOptions = categoryOptions.map(row => row.category_name);
+                const subjectGroupOptions = groupOptions.map(row => row.group_name);
 
                 return [
                     { key: "subject_code", label: "รหัสวิชา" },
-                    { key: "name", label: "ชื่อวิชา", required: true },
+                    { key: "subject_name", label: "ชื่อวิชา", required: true },
                     { key: "credit", label: "หน่วยกิต", type: "number" },
-                    { key: "subject_type", label: "ประเภท", type: "select", options: ["", ...subjectTypeOptions] },
-                    { key: "subject_group", label: "กลุ่มสาระการเรียนรู้", type: "select", options: ["", ...subjectGroupOptions] },
-                    { key: "level", label: "ระดับชั้น", type: "select", options: ["", ...levelOptions] },
+                    { key: "subject_type", label: "ประเภท", type: "select", options: ["", ...subjectTypeOptions], labels: ["เลือกประเภท", ...subjectTypeOptions] },
+                    { key: "subject_group", label: "กลุ่มสาระการเรียนรู้", type: "select", options: ["", ...subjectGroupOptions], labels: ["เลือกกลุ่มสาระการเรียนรู้", ...subjectGroupOptions] },
+                    { key: "level", label: "ระดับชั้น", type: "select", options: ["", ...levelOptions], labels: ["เลือกระดับชั้น", ...levelOptions] },
                 ];
             }}
-            editFields={(items) => {
-                const uniqueValues = (key: string) =>
-                    Array.from(new Set(
-                        (items || [])
-                            .map((x: any) => (x[key] ?? "").toString().trim())
-                            .filter((v: string) => v.length > 0)
-                    )).sort((a, b) => a.localeCompare(b, "th"));
-
-                const subjectTypeOptions = uniqueValues("subject_type");
-                const subjectGroupOptions = uniqueValues("subject_group");
-                const levelOptionsLocal = uniqueValues("level");
+            editFields={() => {
+                const subjectTypeOptions = categoryOptions.map(row => row.category_name);
+                const subjectGroupOptions = groupOptions.map(row => row.group_name);
 
                 return [
                     { key: "subject_code", label: "รหัสวิชา" },
-                    { key: "name", label: "ชื่อวิชา" },
+                    { key: "subject_name", label: "ชื่อวิชา" },
                     { key: "credit", label: "หน่วยกิต", type: "number" },
-                    { key: "subject_type", label: "ประเภท", type: "select", options: ["", ...subjectTypeOptions] },
-                    { key: "subject_group", label: "กลุ่มสาระการเรียนรู้", type: "select", options: ["", ...subjectGroupOptions] },
-                    { key: "level", label: "ระดับชั้น", type: "select", options: ["", ...levelOptions] },
+                    { key: "subject_type", label: "ประเภท", type: "select", options: ["", ...subjectTypeOptions], labels: ["เลือกประเภท", ...subjectTypeOptions] },
+                    { key: "subject_group", label: "กลุ่มสาระการเรียนรู้", type: "select", options: ["", ...subjectGroupOptions], labels: ["เลือกกลุ่มสาระการเรียนรู้", ...subjectGroupOptions] },
+                    { key: "level", label: "ระดับชั้น", type: "select", options: ["", ...levelOptions], labels: ["เลือกระดับชั้น", ...levelOptions] },
                 ];
 
             }}
@@ -962,14 +946,6 @@ export function ProjectsFeature() {
         DirectorApiService.getAcademicYears().then(setAcademicYears).catch(() => { });
         DirectorApiService.getDepartments().then(setDepartments).catch(() => { });
     }, []);
-
-    const teacherOptions = [
-        { id: "", label: "-" },
-        ...teachers.map(t => ({
-            id: t.id,
-            label: `${t.prefix || ""}${t.first_name || ""} ${t.last_name || ""}`
-        }))
-    ];
 
     const ptOptions = projectTypes.map(p => ({ id: p.id, label: p.name }));
     const btOptions = budgetTypes.map(b => ({ id: b.id, label: b.name }));
@@ -1038,8 +1014,8 @@ export function ProjectsFeature() {
                         const filtered = deptId
                             ? teachers.filter(t => String(t.department_id) === String(deptId))
                             : teachers;
-                        return ["ทั้งหมด", ...filtered.map(t => `${t.prefix_id ? (t.name_prefixes?.prefix_name || '') : ''}${t.first_name} ${t.last_name}`)];
-                    }
+                        return ["เลือกครูผู้รับผิดชอบ", ...filtered.map(t => `${t.prefix || ''}${t.first_name} ${t.last_name}`)];
+                    },
                 },
                 { key: "year", label: "ปีการศึกษา", type: "select", options: ["", ...academicYears.map(ay => ay.id.toString())], labels: ["ทั้งหมด", ...academicYears.map(ay => ay.year_name)] },
                 { key: "start_date", label: "วันที่เริ่ม", type: "date" },
@@ -1084,8 +1060,8 @@ export function ProjectsFeature() {
                         const filtered = deptId
                             ? teachers.filter(t => String(t.department_id) === String(deptId))
                             : teachers;
-                        return ["ทั้งหมด", ...filtered.map(t => `${t.prefix_id ? (t.name_prefixes?.prefix_name || '') : ''}${t.first_name} ${t.last_name}`)];
-                    }
+                        return ["เลือกครูผู้รับผิดชอบ", ...filtered.map(t => `${t.prefix || ''}${t.first_name} ${t.last_name}`)];
+                    },
                 },
                 { key: "year", label: "ปีการศึกษา", type: "select", options: ["", ...academicYears.map(ay => ay.id.toString())], labels: ["ทั้งหมด", ...academicYears.map(ay => ay.year_name)] },
                 { key: "start_date", label: "วันที่เริ่ม", type: "date" },

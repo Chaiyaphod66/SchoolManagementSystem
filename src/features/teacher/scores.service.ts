@@ -1,12 +1,24 @@
 import { prisma } from '@/lib/prisma';
 
+const SCORE_PERIODS = ['before_midterm', 'after_midterm'] as const;
+type ScorePeriod = typeof SCORE_PERIODS[number];
+
+function isContinuousAssessmentType(typeName: unknown) {
+    const name = String(typeName || '').trim();
+    return name.includes('คะแนนเก็บ') || name.includes('ระหว่างภาค');
+}
+
+function normalizeScorePeriod(value: unknown): ScorePeriod | null {
+    return SCORE_PERIODS.includes(value as ScorePeriod) ? value as ScorePeriod : null;
+}
+
 export const TeacherScoresService = {
     // Get teacher's teaching assignments (subjects)
     async getSubjects(teacher_id: number) {
         const assignments = await prisma.teaching_assignments.findMany({
             where: { teacher_id },
             include: {
-                subjects: true,
+                subjects: { include: { subject_categories: true } },
                 teachers: { include: { name_prefixes: true } },
                 classrooms: { include: { levels: true } },
                 semesters: { include: { academic_years: true } },
@@ -31,7 +43,7 @@ export const TeacherScoresService = {
                 name: ta.subjects.subject_name,
                 subject_name: ta.subjects.subject_name,
                 credit: ta.subjects.credit ? Number(ta.subjects.credit) : 0,
-                evaluation_type_id: ta.subjects.evaluation_type_id,
+                evaluation_type_id: ta.subjects.subject_categories?.evaluation_type_id ?? null,
             } : null;
 
             const schedules = ((ta as any).class_schedules || []).map((sc: any) => ({
@@ -62,7 +74,7 @@ export const TeacherScoresService = {
                 subject_code: ta.subjects?.subject_code || '',
                 subject_name: ta.subjects?.subject_name || '',
                 credit: ta.subjects?.credit ? Number(ta.subjects.credit) : 0,
-                class_level: ta.classrooms?.levels?.name || '',
+                class_level: ta.classrooms?.levels?.grade_level_name || '',
                 classroom: ta.classrooms?.room_name || '',
                 room: ta.classrooms?.room_name || '',
                 year: ay?.year_name || '',
@@ -127,6 +139,7 @@ export const TeacherScoresService = {
                     category_name: typeInfo?.type_name || "(ไม่มีชื่อ)",
                     title: item.name,
                     max_score: Number(item.max_score),
+                    assessment_period: item.assessment_period,
                     weight_percent: Number(cat.weight_percent),
                     indicators: (item as any).assessment_item_indicators?.map((ai: any) => ({
                         id: ai.indicators.id,
@@ -272,7 +285,8 @@ export const TeacherScoresService = {
         category_id_or_name: number | string,
         title_or_max?: string | number,
         max_score_arg?: number,
-        indicator_ids?: number[]
+        indicator_ids?: number[],
+        assessment_period?: unknown
     ) {
         let categoryId: number;
         let title: string;
@@ -282,6 +296,20 @@ export const TeacherScoresService = {
             categoryId = category_id_or_name;
             title = String(title_or_max || '');
             max_score = Number(max_score_arg);
+
+            const [category] = await prisma.$queryRaw<Array<{ teaching_assignment_id: number; type_name: string | null }>>`
+                SELECT gc.teaching_assignment_id, gct.type_name
+                FROM "grade_categories" gc
+                LEFT JOIN "grade_category_types" gct ON gct.id = gc.category_type_id
+                WHERE gc.id = ${categoryId}
+            `;
+            if (!category || Number(category.teaching_assignment_id) !== Number(teaching_assignment_id)) {
+                throw new Error('หมวดคะแนนไม่อยู่ในรายวิชาที่เลือก');
+            }
+            if (isContinuousAssessmentType(category.type_name) && !normalizeScorePeriod(assessment_period)) {
+                throw new Error('กรุณาเลือกช่วงคะแนนเก็บก่อนหรือหลังกลางภาค');
+            }
+            if (!isContinuousAssessmentType(category.type_name)) assessment_period = null;
         } else {
             // Legacy signature support
             const isThreeArgShape = typeof title_or_max === 'number' && max_score_arg === undefined;
@@ -304,6 +332,7 @@ export const TeacherScoresService = {
                 });
             }
             categoryId = category.id;
+            assessment_period = null;
         }
 
         const item = await prisma.assessment_items.create({
@@ -311,6 +340,7 @@ export const TeacherScoresService = {
                 grade_category_id: categoryId,
                 name: title,
                 max_score: Number.isFinite(max_score) ? max_score : 0,
+                assessment_period: normalizeScorePeriod(assessment_period),
             }
         });
 
@@ -331,8 +361,39 @@ export const TeacherScoresService = {
     },
 
     // Update assessment item
-    async updateHeader(id: number, title: string, max_score: number, indicator_ids?: number[], category_id?: number) {
-        const data: any = { name: title, max_score };
+    async updateHeader(id: number, title: string, max_score: number, indicator_ids?: number[], category_id?: number, assessment_period?: unknown) {
+        const currentItem = await prisma.assessment_items.findUnique({
+            where: { id },
+            select: {
+                grade_category_id: true,
+                grade_categories: { select: { teaching_assignment_id: true } },
+            },
+        });
+        if (!currentItem) throw new Error('ไม่พบหัวข้อคะแนน');
+
+        const targetCategoryId = category_id || currentItem.grade_category_id;
+        const [category] = await prisma.$queryRaw<Array<{ teaching_assignment_id: number; type_name: string | null }>>`
+            SELECT gc.teaching_assignment_id, gct.type_name
+            FROM "grade_categories" gc
+            LEFT JOIN "grade_category_types" gct ON gct.id = gc.category_type_id
+            WHERE gc.id = ${targetCategoryId}
+        `;
+        if (!category) throw new Error('ไม่พบหมวดคะแนน');
+        if (Number(category.teaching_assignment_id) !== Number(currentItem.grade_categories.teaching_assignment_id)) {
+            throw new Error('หมวดคะแนนไม่อยู่ในรายวิชาเดียวกับหัวข้อคะแนน');
+        }
+
+        const continuousAssessment = isContinuousAssessmentType(category.type_name);
+        const normalizedPeriod = normalizeScorePeriod(assessment_period);
+        if (continuousAssessment && !normalizedPeriod) {
+            throw new Error('กรุณาเลือกช่วงคะแนนเก็บก่อนหรือหลังกลางภาค');
+        }
+
+        const data: any = {
+            name: title,
+            max_score,
+            assessment_period: continuousAssessment ? normalizedPeriod : null,
+        };
         if (category_id) data.grade_category_id = category_id;
 
         const item = await prisma.assessment_items.update({
@@ -379,37 +440,43 @@ export const TeacherScoresService = {
         }));
     },
 
-    // Get students enrolled in a teaching assignment
+    // Students study every subject assigned to their classroom.
     async getStudents(teaching_assignment_id: number) {
-        const enrollments = await prisma.enrollments.findMany({
-            where: { teaching_assignment_id },
+        const assignment = await prisma.teaching_assignments.findUnique({
+            where: { id: teaching_assignment_id },
+            select: {
+                classroom_id: true,
+                semesters: { select: { academic_year_id: true } },
+            },
+        });
+        if (!assignment) return [];
+
+        const memberships = await prisma.classroom_students.findMany({
+            where: {
+                classroom_id: assignment.classroom_id,
+                academic_year_id: assignment.semesters.academic_year_id,
+            },
             include: {
                 students: {
                     include: {
                         name_prefixes: true,
-                        classroom_students: { take: 1, orderBy: { academic_year_id: 'desc' } },
                     }
                 }
             },
-            distinct: ['student_id']
+            orderBy: [
+                { roll_number: 'asc' },
+                { student_id: 'asc' },
+            ],
         });
 
-        const mapped = enrollments
-            .map(e => {
-                const s = e.students;
-                if (!s) return null;
-                const cs = (s as any).classroom_students?.[0];
-                return {
-                    id: s.id,
-                    enrollment_id: e.id,
-                    student_code: s.student_code,
-                    prefix: s.name_prefixes?.prefix_name || '',
-                    first_name: s.first_name,
-                    last_name: s.last_name,
-                    roll_number: cs?.roll_number,
-                };
-            })
-            .filter(Boolean);
+        const mapped = memberships.map((membership) => ({
+            id: membership.students.id,
+            student_code: membership.students.student_code,
+            prefix: membership.students.name_prefixes?.prefix_name || '',
+            first_name: membership.students.first_name,
+            last_name: membership.students.last_name,
+            roll_number: membership.roll_number,
+        }));
 
         return (mapped as any[]).sort((a, b) => {
             const aNum = a.roll_number != null ? Number(a.roll_number) : 999999;
@@ -421,16 +488,13 @@ export const TeacherScoresService = {
 
     // Get scores for an assessment item
     async getScores(assessment_item_id: number) {
-        const scores: any[] = await prisma.$queryRawUnsafe(`
-            SELECT ss.*, e.student_id
-            FROM student_scores ss
-            JOIN enrollments e ON ss.enrollment_id = e.id
-            WHERE ss.assessment_item_id = $1
-        `, assessment_item_id);
+        const scores = await prisma.student_scores.findMany({
+            where: { assessment_item_id },
+            orderBy: { student_id: 'asc' },
+        });
 
         return scores.map(s => ({
             id: s.id,
-            enrollment_id: s.enrollment_id,
             student_id: s.student_id || 0,
             score: Number(s.score || 0),
             is_missing: s.is_missing || false,
@@ -448,17 +512,14 @@ export const TeacherScoresService = {
             WHERE "teaching_assignment_id" = ${section_id}
         ` as any[];
 
-        // 4. Fetch predefined types
-        const types = await prisma.$queryRaw`SELECT id, type_name FROM "grade_category_types"` as any[];
         if (categories.length === 0) return [];
 
         const catIds = categories.map(c => c.id);
 
         // 5. Fetch scores via Raw SQL to avoid Prisma Client schema mismatches
         const scores: any[] = await prisma.$queryRawUnsafe(`
-            SELECT ss.assessment_item_id as header_id, e.student_id, ss.score, ss.is_passed
+            SELECT ss.assessment_item_id as header_id, ss.student_id, ss.score, ss.is_passed
             FROM student_scores ss
-            JOIN enrollments e ON ss.enrollment_id = e.id
             JOIN assessment_items ai ON ss.assessment_item_id = ai.id
             WHERE ai.grade_category_id = ANY($1::int[])
         `, catIds);
@@ -472,7 +533,7 @@ export const TeacherScoresService = {
     },
 
     // Save scores for an assessment item
-    async saveScores(assessment_item_id: number, scores: { enrollment_id?: number; student_id?: number; score: number; is_passed?: boolean | null }[]) {
+    async saveScores(assessment_item_id: number, scores: { student_id: number; score: number; is_passed?: boolean | null }[]) {
         // Use raw SQL to find the teaching_assignment_id via the header's category
         const result = await prisma.$queryRaw`
             SELECT gc.teaching_assignment_id 
@@ -482,49 +543,39 @@ export const TeacherScoresService = {
             LIMIT 1
         ` as any[];
         
-        const teaching_assignment_id = result[0]?.teaching_assignment_id;
+        const teaching_assignment_id = Number(result[0]?.teaching_assignment_id);
+        if (!teaching_assignment_id) throw new Error('ไม่พบรายวิชาประจำห้อง');
 
-        const studentIds = (scores || [])
-            .map((s) => Number(s.student_id))
-            .filter((n) => Number.isFinite(n) && n > 0);
-
-        let enrollmentMap = new Map<number, number>();
-        if (teaching_assignment_id && studentIds.length > 0) {
-            const enrollments = await prisma.enrollments.findMany({
-                where: { teaching_assignment_id, student_id: { in: studentIds } },
-                select: { id: true, student_id: true },
-            });
-            enrollmentMap = new Map(enrollments.map((e) => [e.student_id, e.id]));
-        }
+        const validStudents = await this.getStudents(teaching_assignment_id);
+        const validStudentIds = new Set(validStudents.map((student: any) => Number(student.id)));
 
         for (const sc of scores || []) {
-            const enrollment_id =
-                (sc.enrollment_id && Number(sc.enrollment_id)) ||
-                (sc.student_id ? enrollmentMap.get(Number(sc.student_id)) : undefined);
-
-            if (!enrollment_id) continue;
-
-            const existing: any[] = await prisma.$queryRawUnsafe(`
-                SELECT id FROM student_scores 
-                WHERE assessment_item_id = $1 AND enrollment_id = $2
-                LIMIT 1
-            `, assessment_item_id, enrollment_id);
+            const studentId = Number(sc.student_id);
+            if (!validStudentIds.has(studentId)) {
+                throw new Error(`นักเรียน ${studentId} ไม่ได้อยู่ในห้องของรายวิชานี้`);
+            }
 
             const isPassedVal = sc.is_passed !== undefined ? sc.is_passed : null;
             const scoreVal = sc.score !== undefined ? sc.score : 0;
-
-            if (existing.length > 0) {
-                await prisma.$executeRawUnsafe(`
-                    UPDATE student_scores 
-                    SET score = $1, is_passed = $2, updated_at = NOW()
-                    WHERE id = $3
-                `, scoreVal, isPassedVal, existing[0].id);
-            } else {
-                await prisma.$executeRawUnsafe(`
-                    INSERT INTO student_scores (assessment_item_id, enrollment_id, score, is_passed, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, NOW(), NOW())
-                `, assessment_item_id, enrollment_id, scoreVal, isPassedVal);
-            }
+            await prisma.student_scores.upsert({
+                where: {
+                    student_id_assessment_item_id: {
+                        student_id: studentId,
+                        assessment_item_id,
+                    },
+                },
+                update: {
+                    score: scoreVal,
+                    is_passed: isPassedVal,
+                    updated_at: new Date(),
+                },
+                create: {
+                    student_id: studentId,
+                    assessment_item_id,
+                    score: scoreVal,
+                    is_passed: isPassedVal,
+                },
+            });
         }
         return { success: true };
     }

@@ -1,6 +1,7 @@
 import { TeacherBehaviorService } from '@/features/teacher/behavior.service';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { getSession } from '@/lib/auth';
+import { getAuthenticatedTeacherId, teacherCanAccessStudent } from '@/app/api/teacher/_utils';
 
 export async function GET(request: Request) {
     try {
@@ -24,8 +25,10 @@ export async function GET(request: Request) {
         }
 
         if (action === 'students') {
-            const rawTeacherId = searchParams.get('teacher_id');
-            const teacher_id = rawTeacherId ? Number(rawTeacherId) : undefined;
+            const session = await getSession() as any;
+            const teacher_id = session?.role === 'teacher'
+                ? (await getAuthenticatedTeacherId()) ?? undefined
+                : undefined;
             const year = searchParams.get('year') ? Number(searchParams.get('year')) : undefined;
             const semester = searchParams.get('semester') ? Number(searchParams.get('semester')) : undefined;
             const level_id = searchParams.get('level_id') ? Number(searchParams.get('level_id')) : undefined;
@@ -98,6 +101,13 @@ export async function POST(request: Request) {
                 reason: payload.reason
             });
             return successResponse(result, `Record ${action}d successfully`);
+        }
+
+        if (session.role === 'teacher') {
+            const teacherId = await getAuthenticatedTeacherId();
+            if (!teacherId || !await teacherCanAccessStudent(teacherId, Number(body.student_id))) {
+                return errorResponse('Student is not in your homeroom classroom', 403);
+            }
         }
 
         // Default: Record behavior

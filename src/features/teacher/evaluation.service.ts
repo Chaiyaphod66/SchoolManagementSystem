@@ -1,15 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { TeacherStudentsService } from '@/features/teacher/students.service';
-import { promises as fs } from 'fs';
-import path from 'path';
 
-const LOG_FILE = 'debug_advisor.log';
-async function debugLog(msg: string) {
-    const timestamp = new Date().toISOString();
-    try {
-        await fs.appendFile(path.join(process.cwd(), LOG_FILE), `[${timestamp}] [EvaluationService] ${msg}\n`);
-    } catch (e) { /* ignore */ }
-}
+async function debugLog(_msg: string) {}
 
 async function resolveEvaluationPeriodId(year?: number, semester?: number) {
     if (!year || !semester) return null;
@@ -107,7 +99,7 @@ export const TeacherEvaluationService = {
                     teaching_assignment_id: ta.id,
                     subject_code: ta.subjects?.subject_code || '',
                     subject_name: ta.subjects?.subject_name || '',
-                    class_level: ta.classrooms?.levels?.name || '',
+                    class_level: ta.classrooms?.levels?.grade_level_name || '',
                     room: ta.classrooms?.room_name || '',
                     year: ta.semesters?.academic_years?.year_name || '',
                     semester: ta.semesters?.semester_number || 0,
@@ -221,19 +213,28 @@ export const TeacherEvaluationService = {
     },
 
     async getSectionStudentsForEvaluation(teacher_id: number, section_id: number, year: number, semester: number) {
-        // Find students enrolled in this assignment (no status filter - status values may vary)
-        const enrolledStudents = await prisma.enrollments.findMany({
+        const assignment = await prisma.teaching_assignments.findUnique({
+            where: { id: section_id },
+            select: {
+                classroom_id: true,
+                semesters: { select: { academic_year_id: true } },
+            },
+        });
+        if (!assignment) return [];
+
+        const enrolledStudents = await prisma.classroom_students.findMany({
             where: {
-                teaching_assignment_id: section_id,
+                classroom_id: assignment.classroom_id,
+                academic_year_id: assignment.semesters.academic_year_id,
             },
             include: {
                 students: {
                     include: {
                         name_prefixes: true,
-                        classroom_students: { take: 1, orderBy: { academic_year_id: 'desc' } },
                     }
                 }
-            }
+            },
+            orderBy: [{ roll_number: 'asc' }, { student_id: 'asc' }],
         });
 
         const period_id = await resolveEvaluationPeriodId(year, semester);
@@ -244,12 +245,12 @@ export const TeacherEvaluationService = {
         const formResult: any[] = await prisma.$queryRawUnsafe(`
             SELECT f.id FROM evaluation_forms f
             JOIN evaluation_categories t ON f.category_id = t.id
-            WHERE t.target_type = 'STUDENT' AND t.evaluator_role_id = 2
+            WHERE LOWER(t.target_type) = 'student' AND t.evaluator_role_id = 3
         `);
         const formIds = formResult.map(f => f.id);
 
-        for (const enrollment of enrolledStudents) {
-            const s = enrollment.students;
+        for (const membership of enrolledStudents) {
+            const s = membership.students;
 
             // Raw SQL because user_id is missing and we need to check if this student was evaluated
             // In teacher evaluates student, target_id IS the student ID
@@ -264,15 +265,13 @@ export const TeacherEvaluationService = {
             );
 
             const latestEval = latestEvalResult[0] || null;
-            const cs = (s as any).classroom_students?.[0];
-
             results.push({
                 id: s.id,
                 student_code: s.student_code,
                 name: `${s.name_prefixes?.prefix_name || ''}${s.first_name} ${s.last_name}`,
                 evaluated: !!latestEval,
                 submitted_at: latestEval?.submitted_at || null,
-                roll_number: cs?.roll_number,
+                roll_number: membership.roll_number,
             });
         }
 
@@ -331,14 +330,21 @@ export const TeacherEvaluationService = {
                     // 3. Keyword Match Fallback: If no mappings row or no formId found
                     if (!matchingForm) {
                         const candidates: any[] = await prisma.$queryRawUnsafe(`
-                            SELECT * FROM evaluation_forms 
-                            WHERE id BETWEEN 9 AND 17
+                            SELECT ef.* FROM evaluation_forms ef
+                            JOIN evaluation_categories ec ON ec.id = ef.category_id
+                            WHERE LOWER(ec.target_type) = 'student'
+                              AND ec.evaluator_role_id = 3
+                              AND ef.is_active = true
+                            ORDER BY ef.id
                         `);
 
                         matchingForm = candidates.find(f => {
-                            const formWord = f.form_name.replace('ประเมินหมวด', '').trim();
+                            const formWord = f.form_name
+                                .replace('แบบประเมินผลผู้เรียนรายวิชา', '')
+                                .replace('ประเมินหมวด', '')
+                                .trim();
                             return name.includes(formWord) || formWord.includes(name) || f.form_name.includes(name) || name.includes(f.form_name);
-                        });
+                        }) || candidates[0];
                     }
                 }
             }
@@ -346,8 +352,11 @@ export const TeacherEvaluationService = {
             // Fallback: If no match or no section_id, get the first form in range 9-17
             if (!matchingForm) {
                 const fallback: any[] = await prisma.$queryRawUnsafe(`
-                    SELECT * FROM evaluation_forms 
-                    WHERE id BETWEEN 9 AND 17
+                    SELECT ef.* FROM evaluation_forms ef
+                    JOIN evaluation_categories ec ON ec.id = ef.category_id
+                    WHERE LOWER(ec.target_type) = 'student'
+                      AND ec.evaluator_role_id = 3
+                      AND ef.is_active = true
                     ORDER BY id ASC
                     LIMIT 1
                 `);
@@ -361,7 +370,7 @@ export const TeacherEvaluationService = {
                 const original: any[] = await prisma.$queryRawUnsafe(`
                     SELECT ef.* FROM evaluation_forms ef
                     JOIN evaluation_categories eft ON ef.category_id = eft.id
-                    WHERE eft.target_type = 'STUDENT' AND eft.evaluator_role_id = 2
+                    WHERE LOWER(eft.target_type) = 'student' AND eft.evaluator_role_id = 3
                     LIMIT 1
                 `);
                 if (original.length > 0) {
@@ -388,17 +397,18 @@ export const TeacherEvaluationService = {
                     ORDER BY s.order_number ASC, q.order_number ASC
                 `, formId) as any[];
 
-                // 3. Fetch scale options (hardcoded to ID 5 based on user requirement)
+                // 3. Fetch options from the scale configured on the form questions.
                 let scaleOptions: any[] = [];
                 try {
+                    const scaleTypeId = questions.find((question: any) => question.scale_type_id)?.scale_type_id || 1;
                     scaleOptions = await prisma.$queryRawUnsafe(`
                         SELECT label, score_value, order_number 
                         FROM evaluation_scale_items 
-                        WHERE scale_type_id = 5
+                        WHERE scale_type_id = $1
                         ORDER BY score_value DESC
-                    `) as any[];
+                    `, scaleTypeId) as any[];
                 } catch (e) {
-                    console.error("Failed to fetch scale options for ID 5", e);
+                    console.error("Failed to fetch evaluation scale options", e);
                 }
 
                 matchingForm.scale_options = scaleOptions.map(opt => ({
@@ -482,16 +492,9 @@ export const TeacherEvaluationService = {
                 submitted_at: latestResponse?.submitted_at || null
             };
 
-            const fs2 = require('fs');
-            fs2.writeFileSync('d:\\new\\WinAi_SeeuNextLift\\eval_template_response.txt', JSON.stringify(result, null, 2));
-
             return result;
         } catch (error: any) {
             console.error("[TeacherEvaluationService] Error in getSubjectEvaluationTemplate:", error);
-            try {
-                const fs = require('fs');
-                fs.writeFileSync('d:\\new\\WinAi_SeeuNextLift\\eval_error_service.txt', error.message + '\n' + error.stack);
-            } catch (e) {}
             throw error;
         }
     },
@@ -694,12 +697,12 @@ export const TeacherEvaluationService = {
             FROM public.evaluation_responses er
             INNER JOIN public.evaluation_forms ef ON ef.id = er.form_id
             LEFT JOIN public.evaluation_categories eft ON eft.id = ef.category_id
-            LEFT JOIN public.evaluation_periods ep ON ep.id = er.period_id
-            LEFT JOIN public.semesters sem ON sem.id = ep.semester_id
+            LEFT JOIN public.semesters sem ON sem.id = er.semester_id
             LEFT JOIN public.academic_years ay ON ay.id = sem.academic_year_id
-            WHERE LOWER(COALESCE(eft.target_type, '')) = 'advisor'
+            WHERE LOWER(COALESCE(eft.target_type, '')) = 'student'
               AND er.evaluator_user_id = ${teacherUserId}
               AND er.target_student_id IN (${studentIds.join(',')})
+              AND er.target_subject_id IS NULL
               ${period_id ? `AND er.semester_id = ${Number(period_id)}` : ''}
             ORDER BY er.submitted_at DESC NULLS LAST, er.id DESC
             `
@@ -746,7 +749,7 @@ export const TeacherEvaluationService = {
 
                 const responseAnswers = answersByResponse.get(Number(row.id)) || [];
                 const topics = responseAnswers
-                    .filter((a: any) => a.score != null)
+                    .filter((a: any) => a.score_value != null)
                     .map((a: any) => ({
                         name: a.question_text || a.text_value || 'ไม่ระบุหัวข้อ',
                         score: Number(a.score_value),
@@ -786,24 +789,32 @@ export const TeacherEvaluationService = {
     },
 
     async getTeachingStudentEvaluationResults(teacher_id: number, section_id: number, year: number, semester: number) {
-        const academicYearId = year ? await resolveAcademicYearId(Number(year)) : null;
+        const assignment = await prisma.teaching_assignments.findUnique({
+            where: { id: section_id },
+            select: {
+                classroom_id: true,
+                semesters: { select: { academic_year_id: true } },
+            },
+        });
+        if (!assignment) return [];
 
-        // 1. Get all students enrolled in this section
-        const enrolledStudents = await prisma.enrollments.findMany({
+        const academicYearId = year
+            ? await resolveAcademicYearId(Number(year))
+            : assignment.semesters.academic_year_id;
+
+        const enrolledStudents = await prisma.classroom_students.findMany({
             where: {
-                teaching_assignment_id: section_id,
+                classroom_id: assignment.classroom_id,
+                ...(academicYearId ? { academic_year_id: academicYearId } : {}),
             },
             include: {
                 students: {
                     include: {
                         name_prefixes: true,
-                        classroom_students: { 
-                            where: { ...(academicYearId ? { academic_year_id: academicYearId } : {}) },
-                            take: 1 
-                        },
                     }
                 }
-            }
+            },
+            orderBy: [{ roll_number: 'asc' }, { student_id: 'asc' }],
         });
 
         const period_id = await resolveEvaluationPeriodId(year, semester);
@@ -817,8 +828,8 @@ export const TeacherEvaluationService = {
         const formIds = formResult.map(f => f.id);
 
         const results = [];
-        for (const enrollment of enrolledStudents) {
-            const s = enrollment.students;
+        for (const membership of enrolledStudents) {
+            const s = membership.students;
             if (!s) continue;
 
             // Check if this student (as evaluator) has responded for this section
@@ -833,15 +844,13 @@ export const TeacherEvaluationService = {
             );
 
             const response = responseResult[0] || null;
-            const cs = (s as any).classroom_students?.[0];
-
             results.push({
                 id: s.id,
                 student_code: s.student_code,
                 name: `${s.name_prefixes?.prefix_name || ''}${s.first_name} ${s.last_name}`,
                 evaluated: !!response,
                 submitted_at: response?.submitted_at || null,
-                roll_number: cs?.roll_number,
+                roll_number: membership.roll_number,
             });
         }
 

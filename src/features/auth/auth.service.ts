@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 type UserWithRole = {
     id: number;
     username: string;
-    password_hash: string;
+    password_hash: string | null;
     roles: {
         role_name: string;
     };
@@ -44,7 +44,7 @@ export const AuthService = {
                 code: student.student_code,
                 role: 'student',
                 name: fullName || student.student_code,
-                class_level: currentAssignment?.levels?.name || '',
+                class_level: currentAssignment?.levels?.grade_level_name || '',
                 room: currentAssignment?.room_name || '',
             };
         }
@@ -108,12 +108,9 @@ async function verifyUser(user: UserWithRole, password: string, expectedRole: st
         throw new Error('บทบาทไม่ตรงกับผู้ใช้');
     }
 
-    // รองรับทั้งรหัสผ่านแบบ Hash และ Plain Text (สำหรับบัญชีที่ยังไม่ได้เข้ารหัส)
     const storedHash = (user.password_hash || '').trim();
     const isHashed = storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$');
-    const isValid = isHashed
-        ? await bcrypt.compare(password, storedHash)
-        : storedHash === password;
+    const isValid = isHashed && await bcrypt.compare(password, storedHash);
     if (!isValid) {
         throw new Error('รหัสผ่านไม่ถูกต้อง');
     }

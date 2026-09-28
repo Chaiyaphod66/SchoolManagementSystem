@@ -9,8 +9,8 @@ export const TeacherBehaviorService = {
     },
 
     async getLevels() {
-        return prisma.levels.findMany({
-            orderBy: { name: 'asc' }
+        return prisma.grade_level.findMany({
+            orderBy: { grade_level_name: 'asc' }
         });
     },
 
@@ -18,7 +18,7 @@ export const TeacherBehaviorService = {
         const id = level_id ? Number(level_id) : undefined;
         return prisma.classrooms.findMany({
             where: id && !isNaN(id) ? { grade_level_id: id } : undefined,
-            include: { levels: { select: { name: true } } },
+            include: { levels: { select: { grade_level_name: true } } },
             orderBy: { room_name: 'asc' }
         });
     },
@@ -184,7 +184,7 @@ export const TeacherBehaviorService = {
                 first_name: s.first_name,
                 last_name: s.last_name,
                 gender: s.genders?.name || '',
-                class_level: c?.levels?.name || '',
+                class_level: c?.levels?.grade_level_name || '',
                 class_level_id: c?.grade_level_id,
                 classroom_id: c?.id,
                 room: c?.room_name || '',

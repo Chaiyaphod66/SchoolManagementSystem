@@ -220,38 +220,51 @@ export const TeacherGradeCutService = {
         return { success: true };
     },
 
-    async updateManualGrade(enrollment_id: number, letter_grade: string, grade_point?: number, is_locked: boolean = true) {
-        const finalGrade = await prisma.final_grades.findUnique({
-            where: { enrollment_id }
+    async updateManualGrade(
+        teaching_assignment_id: number,
+        student_id: number,
+        letter_grade: string,
+        grade_point?: number,
+        is_locked: boolean = true
+    ) {
+        const assignment = await prisma.teaching_assignments.findUnique({
+            where: { id: teaching_assignment_id },
+            select: { subject_id: true, semester_id: true, teacher_id: true },
         });
+        if (!assignment) throw new Error('ไม่พบรายวิชาประจำห้อง');
 
-        if (finalGrade) {
-            await prisma.final_grades.update({
-                where: { id: finalGrade.id },
-                data: {
-                    letter_grade,
-                    grade_point: grade_point !== undefined ? grade_point : gradePointFromLabel(letter_grade),
-                    is_locked,
-                }
-            });
-        } else {
-            // We need total_score if creating from scratch, but usually calculate first
-            await prisma.final_grades.create({
-                data: {
-                    enrollment_id,
-                    total_score: 0, // Placeholder
-                    letter_grade,
-                    grade_point: grade_point !== undefined ? grade_point : gradePointFromLabel(letter_grade),
-                    is_locked: true
-                }
-            });
-        }
+        await prisma.final_grades.upsert({
+            where: {
+                student_id_subject_id_semester_id: {
+                    student_id,
+                    subject_id: assignment.subject_id,
+                    semester_id: assignment.semester_id,
+                },
+            },
+            update: {
+                letter_grade,
+                grade_point: grade_point !== undefined ? grade_point : gradePointFromLabel(letter_grade),
+                is_locked,
+                calculated_by: assignment.teacher_id,
+                calculated_at: new Date(),
+            },
+            create: {
+                student_id,
+                subject_id: assignment.subject_id,
+                semester_id: assignment.semester_id,
+                total_score: 0,
+                letter_grade,
+                grade_point: grade_point !== undefined ? grade_point : gradePointFromLabel(letter_grade),
+                is_locked,
+                calculated_by: assignment.teacher_id,
+            },
+        });
         return { success: true };
     },
 
     // Save grade scales (per-section using grade_scale_groups)
     async saveThresholds(teaching_assignment_id: number, thresholds: any) {
-        let assignment = await prisma.teaching_assignments.findUnique({
+        const assignment = await prisma.teaching_assignments.findUnique({
             where: { id: teaching_assignment_id },
             select: { grade_scale_group_id: true }
         });
@@ -336,28 +349,60 @@ export const TeacherGradeCutService = {
                 },
                 grade_categories: {
                     include: { assessment_items: true }
-                }
+                },
+                semesters: { select: { academic_year_id: true } },
             }
         });
 
         if (!assignment) return [];
 
-        const isPF = assignment.subjects?.subject_categories_id === 3 || assignment.subjects?.evaluation_type_id === 2;
+        const isPF =
+            assignment.subjects?.subject_categories?.evaluation_type_id === 2 ||
+            assignment.subjects?.subject_categories_id === 3;
         const totalItemsInAssignment = assignment.grade_categories.reduce((acc, cat) => acc + cat.assessment_items.length, 0);
 
-        const enrollments = await prisma.enrollments.findMany({
-            where: { teaching_assignment_id },
+        const memberships = await prisma.classroom_students.findMany({
+            where: {
+                classroom_id: assignment.classroom_id,
+                academic_year_id: assignment.semesters.academic_year_id,
+            },
             include: {
                 students: { include: { name_prefixes: true } },
-                student_scores: {
-                    include: {
-                        assessment_items: true
-                    }
-                },
-                final_grades: true,
             },
-            distinct: ['student_id']
+            orderBy: [{ roll_number: 'asc' }, { student_id: 'asc' }],
         });
+        const studentIds = memberships.map((membership) => membership.student_id);
+        const assessmentItemIds = assignment.grade_categories.flatMap((category) =>
+            category.assessment_items.map((item) => item.id)
+        );
+        const [scoreRows, finalGradeRows] = await Promise.all([
+            prisma.student_scores.findMany({
+                where: {
+                    student_id: { in: studentIds },
+                    assessment_item_id: { in: assessmentItemIds },
+                },
+                include: { assessment_items: true },
+            }),
+            prisma.final_grades.findMany({
+                where: {
+                    student_id: { in: studentIds },
+                    subject_id: assignment.subject_id,
+                    semester_id: assignment.semester_id,
+                },
+            }),
+        ]);
+        const scoresByStudent = new Map<number, typeof scoreRows>();
+        for (const score of scoreRows) {
+            if (!score.student_id) continue;
+            const rows = scoresByStudent.get(score.student_id) || [];
+            rows.push(score);
+            scoresByStudent.set(score.student_id, rows);
+        }
+        const finalGradeByStudent = new Map(
+            finalGradeRows
+                .filter((grade) => grade.student_id)
+                .map((grade) => [Number(grade.student_id), grade])
+        );
 
         const groupId = assignment?.grade_scale_group_id;
         let rawScales = await prisma.grade_scales.findMany({
@@ -372,9 +417,10 @@ export const TeacherGradeCutService = {
         }
         const scales = normalizeGradeScales(rawScales);
 
-        return enrollments.map(e => {
-            const student = e.students;
-            if (!student) return null;
+        return memberships.map((membership) => {
+            const student = membership.students;
+            const studentScores = scoresByStudent.get(student.id) || [];
+            const storedFinalGrade = finalGradeByStudent.get(student.id);
 
             let finalPct = 0;
             let totalRawScore = 0;
@@ -383,13 +429,12 @@ export const TeacherGradeCutService = {
 
             if (isPF) {
                 // Pass/Fail: "ต้องส่งให้ครบถึงจะผ่าน"
-                itemsSubmitted = e.student_scores.filter(sc => sc.is_passed === true).length;
+                itemsSubmitted = studentScores.filter(sc => sc.is_passed === true).length;
                 const isPassed = itemsSubmitted >= totalItemsInAssignment;
                 const displayGrade = isPassed ? "ผ" : "มผ";
                 
                 return {
                     student_id: student.id,
-                    enrollment_id: e.id,
                     student_code: student.student_code,
                     prefix: student.name_prefixes?.prefix_name || '',
                     first_name: student.first_name,
@@ -399,8 +444,8 @@ export const TeacherGradeCutService = {
                     percentage: totalItemsInAssignment > 0 ? Math.round((itemsSubmitted / totalItemsInAssignment) * 100 * 100) / 100 : 0,
                     grade: displayGrade,
                     calculated_grade: displayGrade,
-                    stored_grade: e.final_grades?.letter_grade || null,
-                    is_locked: Boolean(e.final_grades?.is_locked),
+                    stored_grade: storedFinalGrade?.letter_grade || null,
+                    is_locked: Boolean(storedFinalGrade?.is_locked),
                     is_pf: true
                 };
             }
@@ -413,7 +458,7 @@ export const TeacherGradeCutService = {
                     const catItems = cat.assessment_items;
                     const catMax = catItems.reduce((acc, item) => acc + Number(item.max_score || 0), 0);
                     
-                    const catScores = e.student_scores.filter(sc => sc.assessment_items?.grade_category_id === cat.id);
+                    const catScores = studentScores.filter(sc => sc.assessment_items?.grade_category_id === cat.id);
                     const catRaw = catScores.reduce((acc, sc) => acc + Number(sc.score || 0), 0);
                     
                     totalRawScore += catRaw;
@@ -430,7 +475,7 @@ export const TeacherGradeCutService = {
                 totalMaxPossible = assignment.grade_categories.reduce((acc, cat) => 
                     acc + cat.assessment_items.reduce((sum, item) => sum + Number(item.max_score || 0), 0), 0
                 );
-                totalRawScore = e.student_scores.reduce((acc, sc) => acc + Number(sc.score || 0), 0);
+                totalRawScore = studentScores.reduce((acc, sc) => acc + Number(sc.score || 0), 0);
                 
                 if (totalMaxPossible > 0) {
                     finalPct = (totalRawScore / totalMaxPossible) * 100;
@@ -439,15 +484,14 @@ export const TeacherGradeCutService = {
 
             const pct = Math.round(finalPct * 100) / 100;
             const calculatedGrade = calculateGradeFromScales(pct, scales);
-            const normalizedStoredGrade = normalizeGradeLabel(e.final_grades?.letter_grade);
-            const rawStoredGrade = String(e.final_grades?.letter_grade ?? '').trim();
+            const normalizedStoredGrade = normalizeGradeLabel(storedFinalGrade?.letter_grade);
+            const rawStoredGrade = String(storedFinalGrade?.letter_grade ?? '').trim();
             const storedGrade = normalizedStoredGrade || rawStoredGrade || null;
-            const isLocked = Boolean(e.final_grades?.is_locked);
+            const isLocked = Boolean(storedFinalGrade?.is_locked);
             const displayGrade = isLocked ? (storedGrade || calculatedGrade) : calculatedGrade;
 
             return {
                 student_id: student.id,
-                enrollment_id: e.id,
                 student_code: student.student_code,
                 prefix: student.name_prefixes?.prefix_name || '',
                 first_name: student.first_name,
@@ -461,7 +505,7 @@ export const TeacherGradeCutService = {
                 is_locked: isLocked,
                 is_pf: false
             };
-        }).filter(Boolean);
+        });
     },
 
     // Calculate and save final grades
@@ -470,12 +514,18 @@ export const TeacherGradeCutService = {
         const assignment = await prisma.teaching_assignments.findUnique({
             where: { id: teaching_assignment_id },
             include: {
-                subjects: { select: { subject_categories_id: true, evaluation_type_id: true } }
+                subjects: {
+                    include: {
+                        subject_categories: { select: { evaluation_type_id: true } },
+                    },
+                },
             }
         });
         
         if (!assignment) return { success: false, message: "Assignment not found" };
-        const isPF = assignment.subjects?.subject_categories_id === 3 || assignment.subjects?.evaluation_type_id === 2;
+        const isPF =
+            assignment.subjects?.subject_categories?.evaluation_type_id === 2 ||
+            assignment.subjects?.subject_categories_id === 3;
 
         const groupId = assignment?.grade_scale_group_id;
         let rawScales = await prisma.grade_scales.findMany({
@@ -513,7 +563,13 @@ export const TeacherGradeCutService = {
 
             try {
                 const existing = await prisma.final_grades.findUnique({
-                    where: { enrollment_id: s.enrollment_id }
+                    where: {
+                        student_id_subject_id_semester_id: {
+                            student_id: s.student_id,
+                            subject_id: assignment.subject_id,
+                            semester_id: assignment.semester_id,
+                        },
+                    },
                 });
 
                 if (existing) {
@@ -525,23 +581,28 @@ export const TeacherGradeCutService = {
                                 letter_grade: finalGrade,
                                 grade_point: finalGradePoint,
                                 grade_scale_id: gradeScaleId,
+                                calculated_by: assignment.teacher_id,
+                                calculated_at: new Date(),
                             }
                         });
                     }
                 } else {
                     await prisma.final_grades.create({
                         data: {
-                            enrollment_id: s.enrollment_id,
+                            student_id: s.student_id,
+                            subject_id: assignment.subject_id,
+                            semester_id: assignment.semester_id,
                             total_score: s.total_score,
                             letter_grade: finalGrade,
                             grade_point: finalGradePoint,
                             grade_scale_id: gradeScaleId,
+                            calculated_by: assignment.teacher_id,
                         }
                     });
                 }
                 savedCount++;
             } catch (err: any) {
-                console.error(`[GradeCut] Failed to save grade for enrollment ${s.enrollment_id}:`, err.message);
+                console.error(`[GradeCut] Failed to save grade for student ${s.student_id}:`, err.message);
             }
         }
 

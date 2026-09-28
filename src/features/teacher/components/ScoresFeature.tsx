@@ -384,9 +384,24 @@ export function ScoresFeature({ session }: { session: any }) {
 
             {/* Filters */}
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+                <div className="flex items-center justify-between border-b border-slate-200 px-2 py-4 mb-4">
+                    <div>
+                        <h2 className="font-bold text-slate-800">รายการรายวิชา / Section</h2>
+                        <p className="text-base text-slate-500">จำนวน {filteredSubjects.length} รายการ</p>
+                    </div>
+                    {(search || yearFilter !== "all" || semesterFilter !== "all" || levelFilter !== "all" || subjectFilter !== "all") && (
+                        <button
+                            onClick={() => { setSearch(""); setYearFilter("all"); setSemesterFilter("all"); setLevelFilter("all"); setSubjectFilter("all"); }}
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                        >
+                            ล้างตัวกรอง
+                        </button>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end text-base">
                     <div className="md:col-span-2 lg:col-span-1">
-                        <label className="block text-xs font-medium text-slate-500 mb-1">ค้นหา</label>
+                        <label className="block  font-medium text-slate-500 mb-1">ค้นหา</label>
                         <div className="relative">
                             <input
                                 value={search}
@@ -400,34 +415,33 @@ export function ScoresFeature({ session }: { session: any }) {
                         </div>
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">รายวิชา</label>
-                        <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} className="w-full rounded-xl border border-slate-200 px-2 py-2 outline-none focus:ring-2 focus:ring-pink-500 bg-slate-50/50 text-sm">
-                            <option value="all">ทั้งหมด</option>
-                            {subjectOptions.map((opt) => (<option key={opt.code} value={opt.code}>{opt.code} - {opt.name}</option>))}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">ปีการศึกษา</label>
+                        <label className="block font-medium text-slate-500 mb-1">ปีการศึกษา</label>
                         <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="w-full rounded-xl border border-slate-200 px-2 py-2 outline-none focus:ring-2 focus:ring-pink-500 bg-slate-50/50 text-sm">
                             <option value="all">ทั้งหมด</option>
                             {years.map((y) => (<option key={y} value={y}>{y}</option>))}
                         </select>
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">ภาคเรียน</label>
+                        <label className="block font-medium text-slate-500 mb-1">ภาคเรียน</label>
                         <select value={semesterFilter} onChange={(e) => setSemesterFilter(e.target.value)} className="w-full rounded-xl border border-slate-200 px-2 py-2 outline-none focus:ring-2 focus:ring-pink-500 bg-slate-50/50 text-sm">
                             <option value="all">ทั้งหมด</option>
                             {semesters.map((s) => (<option key={s} value={s}>{s}</option>))}
                         </select>
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">ระดับชั้น</label>
+                        <label className="block font-medium text-slate-500 mb-1">ระดับชั้น</label>
                         <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="w-full rounded-xl border border-slate-200 px-2 py-2 outline-none focus:ring-2 focus:ring-pink-500 bg-slate-50/50 text-sm">
                             <option value="all">ทั้งหมด</option>
                             {levels.map((l) => (<option key={l} value={l}>{l}</option>))}
                         </select>
                     </div>
-
+                    <div>
+                        <label className="block font-medium text-slate-500 mb-1">รายวิชา</label>
+                        <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} className="w-full rounded-xl border border-slate-200 px-2 py-2 outline-none focus:ring-2 focus:ring-pink-500 bg-slate-50/50 text-sm">
+                            <option value="all">ทั้งหมด</option>
+                            {subjectOptions.map((opt) => (<option key={opt.code} value={opt.code}>{opt.code} - {opt.name}</option>))}
+                        </select>
+                    </div>
                 </div>
             </section>
 
@@ -437,21 +451,6 @@ export function ScoresFeature({ session }: { session: any }) {
 
             {/* Cards */}
             <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                    <div>
-                        <h2 className="font-bold text-slate-800">รายการรายวิชา / Section</h2>
-                        <p className="text-sm text-slate-500">จำนวน {filteredSubjects.length} รายการ</p>
-                    </div>
-                    {(search || yearFilter !== "all" || semesterFilter !== "all" || levelFilter !== "all" || subjectFilter !== "all") && (
-                        <button
-                            onClick={() => { setSearch(""); setYearFilter("all"); setSemesterFilter("all"); setLevelFilter("all"); setSubjectFilter("all"); }}
-                            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                        >
-                            ล้างตัวกรอง
-                        </button>
-                    )}
-                </div>
-
                 {loading ? (
                     <div className="p-10 text-center text-slate-500">กำลังโหลดรายการวิชาที่สอน...</div>
                 ) : filteredSubjects.length === 0 ? (
@@ -479,20 +478,16 @@ export function ScoresFeature({ session }: { session: any }) {
                                     </div>
 
                                     {/* Info chips */}
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                            <div className="text-xs text-slate-500">Section ID</div>
-                                            <div className="text-sm font-semibold text-slate-700">{s.id}</div>
-                                        </div>
-                                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                            <div className="text-xs text-slate-500">ระดับชั้น</div>
-                                            <div className="text-sm font-semibold text-slate-700">
+                                            <div className="text-base text-slate-500">ระดับชั้น</div>
+                                            <div className="text-lg font-semibold text-slate-700">
                                                 {s.class_level || "-"}
                                             </div>
                                         </div>
                                         <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                            <div className="text-xs text-slate-500">ภาคเรียน</div>
-                                            <div className="text-sm font-semibold text-slate-700">
+                                            <div className="text-base text-slate-500">ภาคเรียน</div>
+                                            <div className="text-lg font-semibold text-slate-700">
                                                 {s.year || "-"} / {s.semester || "-"}
                                             </div>
                                         </div>
@@ -504,19 +499,19 @@ export function ScoresFeature({ session }: { session: any }) {
                                     <div className="mt-4 flex flex-col sm:flex-row gap-2">
                                         <Link
                                             href={`/teacher/score_input?section_id=${s.id}`}
-                                            className="flex-1 rounded-xl bg-pink-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-pink-700 transition-colors"
+                                            className="flex-1 rounded-xl bg-pink-600 px-4 py-2.5 text-center text-base font-semibold text-white hover:bg-pink-700 transition-colors"
                                         >
                                             บันทึกคะแนน
                                         </Link>
                                         <Link
                                             href={`/teacher/grade_cut?section_id=${s.id}`}
-                                            className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-red-700 transition-colors"
+                                            className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-center text-base font-semibold text-white hover:bg-red-700 transition-colors"
                                         >
                                             ตัดเกรด
                                         </Link>
                                         <button
                                             onClick={() => setExamModalSection(s)}
-                                            className="flex-1 rounded-xl bg-pink-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-pink-700 transition-colors flex items-center justify-center gap-1.5"
+                                            className="flex-1 rounded-xl bg-pink-600 px-4 py-2.5 text-center text-base font-semibold text-white hover:bg-pink-700 transition-colors flex items-center justify-center gap-1.5"
                                         >
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />

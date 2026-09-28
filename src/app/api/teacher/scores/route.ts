@@ -1,38 +1,48 @@
 import { TeacherScoresService } from '@/features/teacher/scores.service';
 import { successResponse, errorResponse } from '@/lib/api-response';
+import {
+    getAuthenticatedTeacherId,
+    teacherOwnsAssessmentItem,
+    teacherOwnsAssignment,
+    teacherOwnsCategory,
+} from '@/app/api/teacher/_utils';
 
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const action = searchParams.get('action');
+        const teacherId = await getAuthenticatedTeacherId();
+        if (!teacherId) return errorResponse('Unauthorized', 401);
 
         if (action === 'subjects') {
-            const teacher_id = Number(searchParams.get('teacher_id'));
-            if (!teacher_id || Number.isNaN(teacher_id)) return errorResponse('teacher_id required', 400);
-            const data = await TeacherScoresService.getSubjects(teacher_id);
+            const data = await TeacherScoresService.getSubjects(teacherId);
             return successResponse(data);
         }
         if (action === 'headers') {
             const section_id = Number(searchParams.get('section_id'));
             if (!section_id || Number.isNaN(section_id)) return errorResponse('section_id required', 400);
+            if (!await teacherOwnsAssignment(teacherId, section_id)) return errorResponse('Forbidden section', 403);
             const data = await TeacherScoresService.getHeaders(section_id);
             return successResponse(data);
         }
         if (action === 'students') {
             const section_id = Number(searchParams.get('section_id'));
             if (!section_id || Number.isNaN(section_id)) return errorResponse('section_id required', 400);
+            if (!await teacherOwnsAssignment(teacherId, section_id)) return errorResponse('Forbidden section', 403);
             const data = await TeacherScoresService.getStudents(section_id);
             return successResponse(data);
         }
         if (action === 'scores') {
             const header_id = Number(searchParams.get('header_id'));
             if (!header_id || Number.isNaN(header_id)) return errorResponse('header_id required', 400);
+            if (!await teacherOwnsAssessmentItem(teacherId, header_id)) return errorResponse('Forbidden item', 403);
             const data = await TeacherScoresService.getScores(header_id);
             return successResponse(data);
         }
         if (action === 'all_scores') {
             const section_id = Number(searchParams.get('section_id'));
             if (!section_id || Number.isNaN(section_id)) return errorResponse('section_id required', 400);
+            if (!await teacherOwnsAssignment(teacherId, section_id)) return errorResponse('Forbidden section', 403);
             const data = await TeacherScoresService.getAllSectionScores(section_id);
             return successResponse(data);
         }
@@ -47,6 +57,7 @@ export async function GET(request: Request) {
         if (action === 'categories') {
             const section_id = Number(searchParams.get('section_id'));
             if (!section_id || Number.isNaN(section_id)) return errorResponse('section_id required', 400);
+            if (!await teacherOwnsAssignment(teacherId, section_id)) return errorResponse('Forbidden section', 403);
             const data = await TeacherScoresService.getCategories(section_id);
             return successResponse(data);
         }
@@ -66,30 +77,37 @@ export async function POST(request: Request) {
     try {
         const body = await request.json();
         const { action } = body;
+        const teacherId = await getAuthenticatedTeacherId();
+        if (!teacherId) return errorResponse('Unauthorized', 401);
 
         if (action === 'header_add') {
             if (!Number(body.section_id) || Number.isNaN(Number(body.section_id))) return errorResponse('section_id required', 400);
-            const data = await TeacherScoresService.addHeader(body.section_id, body.category_id || body.category_name || 'ทั่วไป', body.header_name, body.max_score, body.indicator_ids);
+            if (!await teacherOwnsAssignment(teacherId, Number(body.section_id))) return errorResponse('Forbidden section', 403);
+            const data = await TeacherScoresService.addHeader(body.section_id, body.category_id || body.category_name || 'ทั่วไป', body.header_name, body.max_score, body.indicator_ids, body.assessment_period);
             return successResponse(data);
         }
         if (action === 'header_update') {
             if (!Number(body.id) || Number.isNaN(Number(body.id))) return errorResponse('id required', 400);
-            const data = await TeacherScoresService.updateHeader(body.id, body.title, body.max_score, body.indicator_ids, body.category_id);
+            if (!await teacherOwnsAssessmentItem(teacherId, Number(body.id))) return errorResponse('Forbidden item', 403);
+            const data = await TeacherScoresService.updateHeader(body.id, body.title, body.max_score, body.indicator_ids, body.category_id, body.assessment_period);
             return successResponse(data);
         }
         if (action === 'save') {
             if (!Number(body.header_id) || Number.isNaN(Number(body.header_id))) return errorResponse('header_id required', 400);
+            if (!await teacherOwnsAssessmentItem(teacherId, Number(body.header_id))) return errorResponse('Forbidden item', 403);
             const data = await TeacherScoresService.saveScores(body.header_id, body.scores);
             return successResponse(data);
         }
 
         if (action === 'category_add') {
             if (!Number(body.section_id)) return errorResponse('section_id required', 400);
+            if (!await teacherOwnsAssignment(teacherId, Number(body.section_id))) return errorResponse('Forbidden section', 403);
             const data = await TeacherScoresService.addCategory(body.section_id, body.name, body.weight_percent, body.category_type_id);
             return successResponse(data);
         }
         if (action === 'category_update') {
             if (!Number(body.id)) return errorResponse('id required', 400);
+            if (!await teacherOwnsCategory(teacherId, Number(body.id))) return errorResponse('Forbidden category', 403);
             const data = await TeacherScoresService.updateCategory(body.id, body.name, body.weight_percent, body.category_type_id);
             return successResponse(data);
         }
@@ -121,6 +139,7 @@ export async function POST(request: Request) {
         }
 
         if (action === 'category_delete') {
+            if (!await teacherOwnsCategory(teacherId, Number(body.id))) return errorResponse('Forbidden category', 403);
             await TeacherScoresService.deleteCategory(body.id);
             return successResponse({ success: true });
         }
@@ -128,6 +147,7 @@ export async function POST(request: Request) {
         if (action === 'header_delete') {
             const id = Number(body.id);
             if (!id) return errorResponse('id required', 400);
+            if (!await teacherOwnsAssessmentItem(teacherId, id)) return errorResponse('Forbidden item', 403);
             await TeacherScoresService.deleteHeader(id);
             return successResponse({ success: true });
         }
@@ -142,9 +162,12 @@ export async function DELETE(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const id = Number(searchParams.get('id'));
+        const teacherId = await getAuthenticatedTeacherId();
+        if (!teacherId) return errorResponse('Unauthorized', 401);
         if (!id || Number.isNaN(id)) return errorResponse('id required', 400);
 
         if (searchParams.get('action') === 'category_delete') {
+            if (!await teacherOwnsCategory(teacherId, id)) return errorResponse('Forbidden category', 403);
             await TeacherScoresService.deleteCategory(id);
             return successResponse({ success: true });
         }
@@ -154,6 +177,7 @@ export async function DELETE(request: Request) {
             return successResponse({ success: true });
         }
 
+        if (!await teacherOwnsAssessmentItem(teacherId, id)) return errorResponse('Forbidden item', 403);
         await TeacherScoresService.deleteHeader(id);
         return successResponse({ success: true });
     } catch (error: any) {

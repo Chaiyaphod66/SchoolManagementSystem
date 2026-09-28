@@ -15,63 +15,70 @@ export const GradesService = {
     async getGrades(student_id: number, year?: number, semester?: number) {
         if (!student_id) return [];
 
-        // Build where clause
-        const enrollmentWhere: any = { student_id };
+        const membership = await prisma.classroom_students.findFirst({
+            where: {
+                student_id,
+                ...(year ? { academic_years: { year_name: String(year) } } : {}),
+            },
+            orderBy: [
+                { academic_years: { is_active: 'desc' } },
+                { academic_year_id: 'desc' },
+            ],
+        });
+        if (!membership) return [];
 
-        if (year || semester) {
-            enrollmentWhere.teaching_assignments = {
+        const assignments = await prisma.teaching_assignments.findMany({
+            where: {
+                classroom_id: membership.classroom_id,
                 semesters: {
-                    ...(year ? { academic_years: { year_name: String(year) } } : {}),
-                    ...(semester ? { semester_number: semester } : {}),
-                }
-            };
-        }
-
-        const enrollments = await prisma.enrollments.findMany({
-            where: enrollmentWhere,
+                    academic_year_id: membership.academic_year_id,
+                    ...(semester ? { semester_number: Number(semester) } : {}),
+                },
+            },
             include: {
-                teaching_assignments: {
+                subjects: {
+                    include: { subject_categories: true }
+                },
+                semesters: {
+                    include: { academic_years: true }
+                },
+                grade_categories: {
                     include: {
-                        subjects: {
-                            include: { subject_categories: true }
-                        },
-                        semesters: {
-                            include: { academic_years: true }
-                        },
-                        grade_categories: {
+                        assessment_items: {
                             include: {
-                                assessment_items: {
-                                    include: {
-                                        student_scores: {
-                                            where: { enrollments: { student_id } }
-                                        }
-                                    }
+                                student_scores: {
+                                    where: { student_id }
                                 }
                             }
                         }
                     }
                 },
-                final_grades: {
-                    include: { grade_scales: true }
-                }
             }
         });
+        const finalGrades = await prisma.final_grades.findMany({
+            where: {
+                student_id,
+                semester_id: { in: assignments.map((assignment) => assignment.semester_id) },
+                subject_id: { in: assignments.map((assignment) => assignment.subject_id) },
+            },
+            include: { grade_scales: true },
+        });
+        const finalGradeMap = new Map(
+            finalGrades.map((grade) => [`${grade.subject_id}:${grade.semester_id}`, grade])
+        );
 
         // Deduplicate by subject_code
         const uniqueSubjects = new Map();
 
-        enrollments.forEach(enrollment => {
-            const ta = enrollment.teaching_assignments;
+        assignments.forEach(ta => {
             const subject = ta.subjects;
             if (!subject) return;
 
             // Calculate total score from assessment items
             let totalScore = 0;
-            let maxPossible = 0;
 
             ta.grade_categories.forEach(cat => {
                 cat.assessment_items.forEach(item => {
-                    maxPossible += Number(item.max_score || 0);
                     const studentScore = item.student_scores?.[0];
                     if (studentScore) {
                         totalScore += Number(studentScore.score || 0);
@@ -79,11 +86,11 @@ export const GradesService = {
                 });
             });
 
-            const finalGrade = enrollment.final_grades;
+            const finalGrade = finalGradeMap.get(`${ta.subject_id}:${ta.semester_id}`);
             const normalizedGrade = normalizeGradeLabel(finalGrade?.letter_grade);
             const gradePoint = resolveGradePoint(normalizedGrade, finalGrade?.grade_point, finalGrade?.letter_grade);
 
-            uniqueSubjects.set(subject.subject_code, {
+            uniqueSubjects.set(`${subject.subject_code}:${ta.semester_id}`, {
                 subject_code: subject.subject_code,
                 subject: subject.subject_name,
                 credit: Number(subject.credit || 0),

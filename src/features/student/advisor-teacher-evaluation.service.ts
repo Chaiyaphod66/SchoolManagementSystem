@@ -126,8 +126,9 @@ async function ensureAdvisorEvaluationForm() {
         for (const question_text of DEFAULT_ADVISOR_EVAL_TOPICS) {
             const qId = questionId++;
             await tx.$executeRawUnsafe(`
-                INSERT INTO evaluation_questions (id, section_id, question_text, question_type, order_number)
-                VALUES ($1, $2, $3, 'rating', $4)
+                INSERT INTO evaluation_questions
+                    (id, section_id, question_text, question_type_id, scale_type_id, order_number)
+                VALUES ($1, $2, $3, 1, 1, $4)
             `, qId, sectionId, question_text, questions.length + 1);
             questions.push({ id: qId, question_text, question_type: 'rating' });
         }
@@ -198,13 +199,21 @@ export const StudentAdvisorTeacherEvaluationService = {
 
         if (!studentUserId) throw new Error("ไม่พบบัญชีนักเรียน");
 
-        // Fetch scale items for scale_type_id = 4
+        // Use the scale configured by this form (fall back to the first active scale).
         const scaleItems: any[] = await prisma.$queryRawUnsafe(`
-            SELECT score_value, label 
-            FROM evaluation_scale_items 
-            WHERE scale_type_id = 4 
+            SELECT score_value, label
+            FROM evaluation_scale_items
+            WHERE scale_type_id = COALESCE(
+                (SELECT eq.scale_type_id
+                 FROM evaluation_questions eq
+                 JOIN evaluation_sections es ON es.id = eq.section_id
+                 WHERE es.form_id = $1 AND eq.scale_type_id IS NOT NULL
+                 ORDER BY es.order_number, eq.order_number
+                 LIMIT 1),
+                (SELECT id FROM evaluation_scale_types ORDER BY id LIMIT 1)
+            )
             ORDER BY score_value DESC
-        `);
+        `, Number(form.id));
         const formattedOptions = scaleItems.map((item) => ({
             value: Number(item.score_value),
             label: item.label,
@@ -214,10 +223,10 @@ export const StudentAdvisorTeacherEvaluationService = {
             ? (form as any).evaluation_questions.map((q: any) => ({ 
                 id: q.id, 
                 name: q.question_text || "",
-                type: q.question_type_id === 2 ? 'text' : 'rate',
+                type: q.question_type_id === 4 ? 'text' : 'rate',
                 section_id: q.section_id,
                 section_name: q.section_name || null,
-                options: q.question_type_id !== 2 ? formattedOptions : undefined,
+                options: q.question_type_id !== 4 ? formattedOptions : undefined,
             }))
             : DEFAULT_ADVISOR_EVAL_TOPICS.map((name, index) => ({ id: index + 1, name, options: formattedOptions })))
             .filter((t: any) => t.name);
@@ -241,7 +250,7 @@ export const StudentAdvisorTeacherEvaluationService = {
 
         const current = answers
             .map((a) => ({
-                name: a.evaluation_questions?.question_text || a.text_value || "",
+                name: a.question_text || a.text_value || "",
                 score: a.score_value != null ? Number(a.score_value) : null,
             }))
             .filter((a) => a.name && a.score != null);

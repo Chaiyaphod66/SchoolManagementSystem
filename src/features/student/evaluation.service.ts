@@ -81,7 +81,7 @@ export const EvaluationService = {
                 return {
                     id: Number(q.id),
                     form_id: formId,
-                    type: q.question_type_id === 2 ? 'text' : 'scale',
+                    type: q.question_type_id === 4 ? 'text' : 'scale',
                     name: q.question_text,
                     section_id: Number(q.section_id),
                     section_name: q.section_name,
@@ -172,7 +172,7 @@ export const EvaluationService = {
                 return {
                     id: Number(q.id),
                     form_id: formId,
-                    type: q.question_type_id === 2 ? 'text' : 'scale',
+                    type: q.question_type_id === 4 ? 'text' : 'scale',
                     name: q.question_text,
                     section_id: Number(q.section_id),
                     section_name: q.section_name,
@@ -226,12 +226,12 @@ export const EvaluationService = {
             return {
                 id: r.id,
                 form_id: r.form_id,
-                form_name: form?.name || '',
+                form_name: form?.form_name || '',
                 submitted_at: r.submitted_at,
                 answers: rAnswers.map((a) => ({
-                    question: a.question_text || a.answer_text || '',
-                    answer: a.answer_text || '',
-                    score: a.score != null ? Number(a.score) : null,
+                    question: a.question_text || '',
+                    answer: a.text_value || '',
+                    score: a.score_value != null ? Number(a.score_value) : null,
                 })),
             };
         });
@@ -284,7 +284,7 @@ export const EvaluationService = {
         const questionDetails = new Map<string, { id: number, type: string }>();
         questionsRaw.forEach((q: any) => {
             const key = String(q.question_text || '').trim().toLowerCase();
-            if (key) questionDetails.set(key, { id: q.id, type: q.question_type_id === 2 ? 'text' : 'scale' });
+            if (key) questionDetails.set(key, { id: q.id, type: q.question_type_id === 4 ? 'text' : 'scale' });
         });
 
         const semester_id = await resolveSemesterId(year, semester);

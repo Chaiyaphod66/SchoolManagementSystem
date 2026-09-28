@@ -7,9 +7,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ type: st
         console.log("OPTIONS API TYPE:", type);
 
         if (type === "grades") {
-            // Fetch grade levels from the correct table name 'levels'
-            const query = await prisma.$queryRaw`SELECT id, name AS label FROM levels ORDER BY id ASC`;
-            return successResponse(query);
+            const query = await prisma.grade_level.findMany({
+                orderBy: { id: 'asc' },
+                select: { id: true, grade_level_name: true },
+            });
+            const data = query.map((level) => ({ id: level.id, label: level.grade_level_name || '' }));
+            return successResponse(data);
         }
 
         if (type === "classrooms") {
@@ -20,7 +23,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ type: st
             const data = classrooms.map((c: any) => ({
                 id: c.id,
                 label: c.room_name.trim(),
-                level: c.levels?.name || ''
+                level: c.levels?.grade_level_name || ''
             }));
             return successResponse(data);
         }
@@ -95,17 +98,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ type: st
             if (config.input_type === 'none') return successResponse([]);
 
             let optionsType = "";
-            switch (targetType) {
+            switch (targetType.toLowerCase()) {
                 case 'grade_level': optionsType = 'grades'; break;
                 case 'classroom': optionsType = 'classrooms'; break;
                 case 'learning_group': optionsType = 'learning-groups'; break;
                 case 'teaching_assignment': optionsType = 'subjects'; break;
-                default: optionsType = targetType; 
+                case 'role': optionsType = 'roles'; break;
+                case 'department': optionsType = 'departments'; break;
+                case 'user': optionsType = 'users'; break;
+                case 'all': optionsType = 'all'; break;
+                default: optionsType = targetType.toLowerCase();
             }
 
             if (optionsType === 'grades') {
-                const query = await prisma.$queryRaw`SELECT id, name AS label FROM levels ORDER BY id ASC`;
-                return successResponse(query);
+                const query = await prisma.grade_level.findMany({
+                    orderBy: { id: 'asc' },
+                    select: { id: true, grade_level_name: true },
+                });
+                return successResponse(query.map((level) => ({
+                    id: String(level.id),
+                    label: level.grade_level_name || '',
+                })));
             }
             if (optionsType === 'classrooms') {
                 const classrooms = await prisma.classrooms.findMany({
@@ -138,7 +151,37 @@ export async function GET(req: Request, { params }: { params: Promise<{ type: st
                 })));
             }
 
-            if (targetType === 'all') return successResponse([{ id: 'all', label: 'ทุกคน' }]);
+            if (optionsType === 'roles') {
+                const roles = await prisma.roles.findMany({
+                    orderBy: { id: 'asc' },
+                    select: { id: true, role_name: true },
+                });
+                return successResponse(roles.map((role) => ({
+                    id: String(role.id),
+                    label: role.role_name,
+                })));
+            }
+            if (optionsType === 'departments') {
+                const departments = await prisma.departments.findMany({
+                    orderBy: { department_name: 'asc' },
+                    select: { id: true, department_name: true },
+                });
+                return successResponse(departments.map((department) => ({
+                    id: String(department.id),
+                    label: department.department_name,
+                })));
+            }
+            if (optionsType === 'users') {
+                const users = await prisma.users.findMany({
+                    orderBy: { username: 'asc' },
+                    select: { id: true, username: true },
+                });
+                return successResponse(users.map((user) => ({
+                    id: String(user.id),
+                    label: user.username,
+                })));
+            }
+            if (optionsType === 'all') return successResponse([{ id: 'all', label: 'ทุกคน' }]);
 
             return successResponse([]);
         }

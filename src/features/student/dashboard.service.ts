@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -76,50 +75,35 @@ export const StudentDashboardService = {
 
         const photo_url = await resolveStudentPhotoUrl(student.id);
 
-        const enrollmentWhere: any = { student_id };
-        if (activeSemester?.id) {
-            const assignments = await (prisma.teaching_assignments as any).findMany({
-                where: { semester_id: activeSemester.id },
-                select: { id: true },
-            });
-            enrollmentWhere.teaching_assignment_id = {
-                in: assignments.map((ta: any) => ta.id),
-            };
-        }
-
-        const [enrollments, attendanceRecords, behaviorRaw, participations] = await Promise.all([
-            (prisma.enrollments as any).findMany({
-                where: enrollmentWhere,
-                include: {
-                    teaching_assignments: {
-                        include: {
-                            subjects: true,
-                        },
+        const membership = (student as any).classroom_students?.[0];
+        const [assignments, attendanceRecords, behaviorRaw] = await Promise.all([
+            membership && activeSemester
+                ? prisma.teaching_assignments.findMany({
+                    where: {
+                        classroom_id: membership.classroom_id,
+                        semester_id: activeSemester.id,
                     },
-                    final_grades: true,
+                    include: { subjects: true },
+                    orderBy: { subject_id: 'asc' },
+                })
+                : Promise.resolve([]),
+            prisma.attendance_records.findMany({
+                where: { student_id },
+                include: {
+                    attendance_status: {
+                        select: { status_name: true },
+                    },
                 },
-                orderBy: { id: 'desc' },
             }),
-            (prisma.attendance_records as any).findMany({
-                where: {
-                    enrollments: enrollmentWhere,
-                },
-                select: {
-                    status: true,
-                },
+            prisma.behavior_records.findMany({
+                where: { student_id },
+                select: { points_awarded: true },
             }),
-            Promise.resolve([] as any[]),
-            prisma.$queryRawUnsafe(`
-                SELECT ep.*, e.title, e.start_datetime, e.location
-                FROM event_participants ep
-                JOIN events e ON ep.event_id = e.id
-                WHERE ep.user_id = $1
-            `, student.user_id),
         ]);
 
         const attendance = { present: 0, absent: 0, late: 0, leave: 0, total: attendanceRecords.length, rate: 0 };
-        for (const record of attendanceRecords as any[]) {
-            const key = normalizeAttendanceStatus(record.status);
+        for (const record of attendanceRecords) {
+            const key = normalizeAttendanceStatus(record.attendance_status?.status_name);
             if (key === 'present') attendance.present += 1;
             if (key === 'absent') attendance.absent += 1;
             if (key === 'late') attendance.late += 1;
@@ -132,9 +116,8 @@ export const StudentDashboardService = {
         let additions = 0;
         let deductions = 0;
         for (const record of behaviorRaw || []) {
-            const points = record.points || 0;
-            const type = String(record.type || '').toLowerCase();
-            if (type === 'reward' || points > 0) additions += Math.abs(points);
+            const points = record.points_awarded || 0;
+            if (points > 0) additions += Math.abs(points);
             else deductions += Math.abs(points);
         }
         const conductScore = Math.max(0, 100 + additions - deductions);
@@ -159,16 +142,29 @@ export const StudentDashboardService = {
             status: 'upcoming',
         }));
 
-        const allGradeRows = (enrollments as any[])
-            .filter((e: any) => e.teaching_assignments?.subjects)
-            .map((e: any) => ({
-                enrollment_id: e.id,
-                subject_code: e.teaching_assignments.subjects.subject_code,
-                subject_name: e.teaching_assignments.subjects.subject_name,
-                total_score: e.final_grades ? Number(e.final_grades.total_score || 0) : null,
-                letter_grade: e.final_grades?.letter_grade || null,
-                grade_point: e.final_grades?.grade_point != null ? Number(e.final_grades.grade_point) : null,
-            }))
+        const finalGrades = activeSemester
+            ? await prisma.final_grades.findMany({
+                where: {
+                    student_id,
+                    semester_id: activeSemester.id,
+                    subject_id: { in: assignments.map((assignment) => assignment.subject_id) },
+                },
+            })
+            : [];
+        const gradeBySubject = new Map(finalGrades.map((grade) => [grade.subject_id, grade]));
+
+        const allGradeRows = assignments
+            .map((assignment) => {
+                const grade = gradeBySubject.get(assignment.subject_id);
+                return {
+                    teaching_assignment_id: assignment.id,
+                    subject_code: assignment.subjects.subject_code,
+                    subject_name: assignment.subjects.subject_name,
+                    total_score: grade ? Number(grade.total_score || 0) : null,
+                    letter_grade: grade?.letter_grade || null,
+                    grade_point: grade?.grade_point != null ? Number(grade.grade_point) : null,
+                };
+            })
             .sort((a: any, b: any) => a.subject_code.localeCompare(b.subject_code));
 
         const recentGrades = allGradeRows.slice(0, 6);
@@ -180,7 +176,7 @@ export const StudentDashboardService = {
 
         const prefix = (student as any).name_prefixes?.prefix_name || '';
         const fullName = [prefix, (student as any).first_name, (student as any).last_name].filter(Boolean).join(' ').trim();
-        const classLevel = (student as any).classroom_students?.[0]?.classrooms?.levels?.name || '';
+        const classLevel = (student as any).classroom_students?.[0]?.classrooms?.levels?.grade_level_name || '';
         const room = (student as any).classroom_students?.[0]?.classrooms?.room_name || '';
 
         return {
@@ -197,7 +193,7 @@ export const StudentDashboardService = {
                 year: activeSemester.academic_years?.year_name || '',
             } : null,
             stats: {
-                registeredSubjects: enrollments.length,
+                registeredSubjects: assignments.length,
                 completedGrades: allGradeRows.filter((g: any) => g.letter_grade).length,
                 pendingGrades: allGradeRows.filter((g: any) => !g.letter_grade).length,
                 gpa,

@@ -2,6 +2,7 @@ import { TeacherStudentsService } from '@/features/teacher/students.service';
 import { errorResponse, successResponse } from '@/lib/api-response';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { getAuthenticatedTeacherId } from '@/app/api/teacher/_utils';
 
 const PUBLIC_DIR = path.join(process.cwd(), 'public', 'uploads', 'student-photos');
 const PUBLIC_URL_BASE = '/uploads/student-photos';
@@ -22,11 +23,11 @@ function normalizeExtension(fileName: string, mimeType?: string | null) {
 export async function POST(request: Request) {
     try {
         const formData = await request.formData();
-        const teacher_id = Number(formData.get('teacher_id'));
+        const teacher_id = await getAuthenticatedTeacherId();
         const student_id = Number(formData.get('student_id') || formData.get('id'));
         const file = formData.get('file');
 
-        if (!teacher_id || Number.isNaN(teacher_id)) return errorResponse('teacher_id required', 400);
+        if (!teacher_id) return errorResponse('Unauthorized', 401);
         if (!student_id || Number.isNaN(student_id)) return errorResponse('student_id required', 400);
         if (!(file instanceof File)) return errorResponse('file required', 400);
         if (file.size <= 0) return errorResponse('empty file', 400);
@@ -64,10 +65,10 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
-        const teacher_id = Number(searchParams.get('teacher_id'));
+        const teacher_id = await getAuthenticatedTeacherId();
         const student_id = Number(searchParams.get('student_id'));
 
-        if (!teacher_id || Number.isNaN(teacher_id)) return errorResponse('teacher_id required', 400);
+        if (!teacher_id) return errorResponse('Unauthorized', 401);
         if (!student_id || Number.isNaN(student_id)) return errorResponse('student_id required', 400);
 
         const canAccess = await TeacherStudentsService.canTeacherAccessStudent(teacher_id, student_id);

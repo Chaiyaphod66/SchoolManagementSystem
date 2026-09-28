@@ -48,7 +48,7 @@ type StudentDashboardData = {
         location?: string;
     }>;
     recentGrades?: Array<{
-        enrollment_id: number;
+        teaching_assignment_id: number;
         subject_code: string;
         subject_name: string;
         letter_grade?: string | null;
@@ -123,7 +123,7 @@ export function DashboardFeature({ session }: { session: StudentDashboardSession
     const displayClassLevel = profile.class_level || session.class_level || '-';
 
     const cards = [
-        { label: 'วิชาที่ลงทะเบียน', value: stats.registeredSubjects ?? 0, href: '/student/registration', color: 'from-pink-500 to-red-600', icon: BookOpen },
+        { label: 'รายวิชาของห้อง', value: stats.registeredSubjects ?? 0, href: '/student/schedule', color: 'from-pink-500 to-red-600', icon: BookOpen },
         { label: 'กิจกรรมที่กำลังจะมา', value: stats.upcomingActivities ?? 0, href: '/student/activities', color: 'from-pink-500 to-red-600', icon: Calendar },
         { label: 'การเข้าเรียน (%)', value: stats.attendanceRate ?? 0, href: '/student/schedule', color: 'from-pink-500 to-red-600', icon: Clock },
         { label: 'คะแนนความประพฤติ', value: stats.conductScore ?? 0, href: '/student/conduct', color: 'from-pink-500 to-red-600', icon: Award },

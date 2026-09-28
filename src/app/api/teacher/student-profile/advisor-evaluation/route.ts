@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TeacherStudentsService } from '@/features/teacher/students.service';
 import { errorResponse, successResponse } from '@/lib/api-response';
 import { z } from 'zod';
+import { getAuthenticatedTeacherId } from '@/app/api/teacher/_utils';
 
 const submitSchema = z.object({
     teacher_id: z.number().int().positive(),
@@ -19,13 +20,14 @@ const submitSchema = z.object({
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
-        const teacher_id = parseInt(searchParams.get('teacher_id') || '0');
+        const teacher_id = await getAuthenticatedTeacherId();
         const student_id = parseInt(searchParams.get('student_id') || '0');
         const year = parseInt(searchParams.get('year') || '0');
         const semester = parseInt(searchParams.get('semester') || '0');
         const sub_mode = searchParams.get('sub_mode') || 'attributes';
 
-        if (!teacher_id || !student_id || !year || !semester) {
+        if (!teacher_id) return errorResponse('Unauthorized', 401);
+        if (!student_id || !year || !semester) {
             return errorResponse('Missing required parameters', 400);
         }
 
@@ -43,6 +45,8 @@ export async function GET(request: Request) {
 
 export async function POST(req: NextRequest) {
     try {
+        const teacherId = await getAuthenticatedTeacherId();
+        if (!teacherId) return errorResponse('Unauthorized', 401);
         const body = await req.json();
         const parsed = submitSchema.safeParse(body);
         if (!parsed.success) {
@@ -50,7 +54,7 @@ export async function POST(req: NextRequest) {
         }
 
         const result = await TeacherStudentsService.submitAdvisorEvaluationForStudent({
-            teacher_id: parsed.data.teacher_id,
+            teacher_id: teacherId,
             student_id: parsed.data.student_id,
             year: parsed.data.year,
             semester: parsed.data.semester,

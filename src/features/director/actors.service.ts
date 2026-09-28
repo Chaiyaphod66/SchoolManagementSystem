@@ -20,10 +20,9 @@ const ACTOR_DEFINITIONS: {
         { name: 'semesters', label: 'ภาคเรียน', group: 'academic', groupLabel: 'วิชาการ' },
         { name: 'subjects', label: 'รายวิชา', group: 'academic', groupLabel: 'วิชาการ' },
         { name: 'teaching_assignments', label: 'การจัดการสอน', group: 'academic', groupLabel: 'วิชาการ' },
-        { name: 'enrollments', label: 'การลงทะเบียน', group: 'academic', groupLabel: 'วิชาการ' },
         { name: 'classrooms', label: 'ห้องเรียน', group: 'academic', groupLabel: 'วิชาการ' },
-        { name: 'levels', label: 'ระดับชั้น', group: 'academic', groupLabel: 'วิชาการ' },
-        { name: 'programs', label: 'แผนการเรียน', group: 'academic', groupLabel: 'วิชาการ' },
+        { name: 'classroom_students', label: 'นักเรียนประจำห้อง', group: 'academic', groupLabel: 'วิชาการ' },
+        { name: 'grade_level', label: 'ระดับชั้น', group: 'academic', groupLabel: 'วิชาการ' },
 
         // Scores & Grades
         { name: 'grade_categories', label: 'หมวดคะแนน', group: 'scores', groupLabel: 'คะแนน/เกรด' },
@@ -35,7 +34,6 @@ const ACTOR_DEFINITIONS: {
         { name: 'assessment_item_indicators', label: 'ตัวชี้วัด-ประเมิน', group: 'scores', groupLabel: 'คะแนน/เกรด' },
 
         // Attendance
-        { name: 'attendance_sessions', label: 'รอบการเช็คชื่อ', group: 'attendance', groupLabel: 'การเข้าเรียน' },
         { name: 'attendance_records', label: 'บันทึกเข้าเรียน', group: 'attendance', groupLabel: 'การเข้าเรียน' },
 
         // Behavior
@@ -51,7 +49,7 @@ const ACTOR_DEFINITIONS: {
         { name: 'events', label: 'กิจกรรม/อีเวนท์', group: 'events', groupLabel: 'กิจกรรม' },
         { name: 'event_participants', label: 'ผู้เข้าร่วม', group: 'events', groupLabel: 'กิจกรรม' },
         { name: 'event_targets', label: 'กลุ่มเป้าหมาย', group: 'events', groupLabel: 'กิจกรรม' },
-        { name: 'activity_evaluation_link', label: 'เชื่อมกิจกรรม-ประเมิน', group: 'events', groupLabel: 'กิจกรรม' },
+        { name: 'event_evaluations', label: 'เชื่อมกิจกรรม-ประเมิน', group: 'events', groupLabel: 'กิจกรรม' },
 
         // Evaluation
         { name: 'evaluation_forms', label: 'แบบประเมิน', group: 'evaluation', groupLabel: 'การประเมิน' },

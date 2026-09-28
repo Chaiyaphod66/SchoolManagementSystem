@@ -89,18 +89,11 @@ export function ScheduleFeature({ session }: ScheduleFeatureProps) {
         queryFn: () => StudentApiService.getAdvisor(),
     });
 
-    const cartQuery = useQuery({
-        queryKey: ["student", "cart", year, semester],
-        queryFn: () => StudentApiService.getCart(yearNum, semesterNum),
-        enabled: hasValidTerm,
-    });
-
     const classRows = classScheduleQuery.data || [];
     const examRows = examScheduleQuery.data || [];
-    const cartItems = cartQuery.data || [];
     const advDataAny = advisorQuery.data as any;
     const advisors = advDataAny?.advisors || (advDataAny?.advisor ? [advDataAny.advisor] : []);
-    const isLoading = (hasValidTerm && (classScheduleQuery.isLoading || examScheduleQuery.isLoading || advisorQuery.isLoading || cartQuery.isLoading)) || academicYearsQuery.isLoading;
+    const isLoading = (hasValidTerm && (classScheduleQuery.isLoading || examScheduleQuery.isLoading || advisorQuery.isLoading)) || academicYearsQuery.isLoading;
 
 
 
@@ -117,9 +110,9 @@ export function ScheduleFeature({ session }: ScheduleFeatureProps) {
 
     useEffect(() => {
         if (didAutoFallback || hasManualTermSelection || !hasValidTerm) return;
-        if (classScheduleQuery.isLoading || examScheduleQuery.isLoading || advisorQuery.isLoading || cartQuery.isLoading) return;
+        if (classScheduleQuery.isLoading || examScheduleQuery.isLoading || advisorQuery.isLoading) return;
 
-        const hasCurrentData = classRows.length > 0 || cartItems.length > 0 || examRows.length > 0 || advisors.length > 0;
+        const hasCurrentData = classRows.length > 0 || examRows.length > 0 || advisors.length > 0;
         if (hasCurrentData) return;
 
         const latestDataAny = advisorLatestQuery.data as any;
@@ -138,8 +131,6 @@ export function ScheduleFeature({ session }: ScheduleFeatureProps) {
         advisors.length,
         advisorLatestQuery.data,
         advisorQuery.isLoading,
-        cartItems.length,
-        cartQuery.isLoading,
         classRows.length,
         classScheduleQuery.isLoading,
         didAutoFallback,
@@ -210,20 +201,6 @@ export function ScheduleFeature({ session }: ScheduleFeatureProps) {
         return String(row?.period || "").trim();
     };
 
-    const cartScheduleRows = (cartItems || []).flatMap((item: any) =>
-        (Array.isArray(item?.schedules) ? item.schedules : []).map((sch: any) => ({
-            section_id: item.section_id || item.teaching_assignment_id || item.id,
-            subject_code: item.subject_code || "-",
-            subject_name: item.subject_name || "-",
-            teacher: item.teacher_name || "",
-            room_name: sch?.room_name || sch?.room || "",
-            room: sch?.room_name || sch?.room || "",
-            classroom: item.room || "",
-            day_of_week: sch?.day_of_week || sch?.day || "",
-            time_range: sch?.time_range || sch?.period || "",
-            source: "cart" as const,
-        }))
-    );
     const mergedClassRows = [
         ...(classRows || []).map((r: any) => ({
             ...r,
@@ -231,9 +208,8 @@ export function ScheduleFeature({ session }: ScheduleFeatureProps) {
             time_range: buildTimeRange(r),
             teacher: r?.teacher || r?.teacher_name || "",
             room_name: r?.room_name || r?.room || "",
-            source: "registered" as const,
+            source: "classroom" as const,
         })),
-        ...cartScheduleRows,
     ].filter((r: any) => String(r?.day_of_week || "").trim() && String(r?.time_range || "").trim());
 
     // Generate dynamic slots from actual class data to prevent time overlaps/mismatches with database periods
@@ -473,8 +449,8 @@ export function ScheduleFeature({ session }: ScheduleFeatureProps) {
                                                             return (
                                                                 <td key={slot} className={`px-2 py-3 border-r border-slate-200 align-top ${matches.length > 1 ? 'bg-rose-50/60' : ''}`}>
                                                                     {matches.map((r, i) => (
-                                                                        <div key={`${r.source || 'registered'}-${r.section_id || r.subject_code || i}-${i}`} className={`rounded-xl p-3.5 mb-3 last:mb-0 border shadow-sm shrink-0 ${r.source === 'cart' ? 'bg-red-50 border-red-200' : 'bg-red-50 border-red-100'}`}>
-                                                                            <div className={`font-bold text-sm mb-1.5 leading-tight truncate ${r.source === 'cart' ? 'text-red-700' : 'text-red-700'}`}>{r.subject_code || "-"}</div>
+                                                                        <div key={`${r.source || 'classroom'}-${r.section_id || r.subject_code || i}-${i}`} className="rounded-xl p-3.5 mb-3 last:mb-0 border shadow-sm shrink-0 bg-red-50 border-red-100">
+                                                                            <div className="font-bold text-sm mb-1.5 leading-tight truncate text-red-700">{r.subject_code || "-"}</div>
                                                                             <div className="text-[15px] text-slate-800 font-extrabold leading-snug mb-2 line-clamp-2">{r.subject_name || "-"}</div>
                                                                             <div className="text-xs text-slate-800 font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={`ผู้สอน ${r.teacher || "-"}`}>ผู้สอน: {r.teacher || "-"}</div>
                                                                             <div className="text-xs text-slate-500 font-medium mt-1.5 whitespace-nowrap overflow-hidden text-ellipsis">ระดับชั้น: {r.class_level || "-"}</div>

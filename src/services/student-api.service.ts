@@ -7,51 +7,8 @@ export const StudentApiService = {
     },
 
     // ---- Registration ----
-    async searchSubjects(keyword: string, year?: number, semester?: number, class_level?: string, room?: string) {
-        let url = `/api/student/registration/search?keyword=${encodeURIComponent(keyword)}`;
-        if (year) url += `&year=${year}`;
-        if (semester) url += `&semester=${semester}`;
-        if (class_level) url += `&class_level=${encodeURIComponent(class_level)}`;
-        if (room) url += `&room=${encodeURIComponent(room)}`;
-        return fetchApi<any[]>(url);
-    },
-
-    async browseSubjects(year: number, semester: number, class_level: string, room: string) {
-        const query = new URLSearchParams({
-            year: year.toString(),
-            semester: semester.toString(),
-            class_level,
-            room
-        });
-        return fetchApi<any[]>(`/api/student/registration/browse?${query.toString()}`);
-    },
-
-    async addToCart(section_id: number, year: number, semester: number) {
-        return fetchApi<any>('/api/student/registration/add', {
-            method: 'POST',
-            body: JSON.stringify({ section_id, year, semester })
-        });
-    },
-
-    async getCart(year: number, semester: number) {
-        return fetchApi<any[]>(`/api/student/registration/cart?year=${year}&semester=${semester}`);
-    },
-
     async getRegistered(year: number, semester: number) {
         return fetchApi<any[]>(`/api/student/registration/registered?year=${year}&semester=${semester}`);
-    },
-
-    async confirmCart(year: number, semester: number) {
-        return fetchApi<any>('/api/student/registration/confirm', {
-            method: 'POST',
-            body: JSON.stringify({ year, semester })
-        });
-    },
-
-    async removeCartItem(id: number) {
-        return fetchApi<any>(`/api/student/registration/remove/${id}`, {
-            method: 'DELETE'
-        });
     },
 
     async getAdvisor(year?: number, semester?: number) {

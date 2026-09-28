@@ -170,45 +170,44 @@ export const LearningResultsService = {
 
         if (!student) return [];
 
-        const enrollmentWhere: any = { student_id };
-        if (teaching_assignment_id) {
-            enrollmentWhere.teaching_assignment_id = teaching_assignment_id;
-        }
-        if (subject_id || year || semester) {
-            enrollmentWhere.teaching_assignments = {};
-            if (subject_id) enrollmentWhere.teaching_assignments.subject_id = subject_id;
-            if (semester) enrollmentWhere.teaching_assignments.semesters = { semester_number: semester };
-            if (year) {
-                enrollmentWhere.teaching_assignments.semesters = {
-                    ...(enrollmentWhere.teaching_assignments.semesters || {}),
-                    academic_years: { year_name: String(year) },
-                };
-            }
-        }
+        const membership = await prisma.classroom_students.findFirst({
+            where: {
+                student_id,
+                ...(year ? { academic_years: { year_name: String(year) } } : {}),
+            },
+            orderBy: [
+                { academic_years: { is_active: 'desc' } },
+                { academic_year_id: 'desc' },
+            ],
+        });
+        if (!membership) return [];
 
-        const enrollments = await prisma.enrollments.findMany({
-            where: enrollmentWhere,
-            include: {
-                teaching_assignments: {
-                    include: {
-                        subjects: true,
-                        semesters: { include: { academic_years: true } },
-                        teachers: true
-                    },
+        const assignments = await prisma.teaching_assignments.findMany({
+            where: {
+                classroom_id: membership.classroom_id,
+                ...(teaching_assignment_id ? { id: teaching_assignment_id } : {}),
+                ...(subject_id ? { subject_id } : {}),
+                semesters: {
+                    academic_year_id: membership.academic_year_id,
+                    ...(semester ? { semester_number: Number(semester) } : {}),
                 },
+            },
+            include: {
+                subjects: true,
+                semesters: { include: { academic_years: true } },
+                teachers: true,
             },
         });
 
-        if (enrollments.length === 0) return [];
+        if (assignments.length === 0) return [];
 
         const semester_id = await resolveSemesterId(year, semester);
 
         // We do not need to strictly filter by form type since the teacher submission only generates one per subject.
         const results: any[] = [];
 
-        // For each enrollment, find the latest evaluation response
-        for (const enrollment of enrollments) {
-            const ta = enrollment.teaching_assignments;
+        // For each classroom subject, find the latest evaluation response.
+        for (const ta of assignments) {
             const subject = ta.subjects;
             const teacher = ta.teachers;
 

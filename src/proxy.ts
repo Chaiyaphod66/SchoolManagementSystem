@@ -57,6 +57,9 @@ export async function proxy(request: NextRequest) {
     if (pathname.startsWith('/api/director') && role !== 'director') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
+    if (pathname.startsWith('/api/options') && role !== 'director' && role !== 'teacher') {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     // Inject user info into headers so that downstream components/route handlers can access it if needed
     const requestHeaders = new Headers(request.headers);

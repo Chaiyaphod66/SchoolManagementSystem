@@ -14,6 +14,8 @@ interface HealthFeatureProps {
 
 export function HealthFeature({ session }: HealthFeatureProps) {
     const student = session;
+    // Medical records are maintained by school staff. Students can only view them.
+    const canEditHealth = false;
 
     const contentRef = useRef<HTMLDivElement>(null);
     const queryClient = useQueryClient();
@@ -257,7 +259,7 @@ export function HealthFeature({ session }: HealthFeatureProps) {
             </section>
 
             {/* Editing Form */}
-            {isEditing && (
+            {canEditHealth && isEditing && (
                 <section className="bg-white p-6 rounded-2xl shadow-sm border border-red-200">
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="text-xl font-bold text-slate-800">แก้ไขข้อมูลสุขภาพ</h3>
@@ -497,6 +499,7 @@ export function HealthFeature({ session }: HealthFeatureProps) {
                             </div>
                             <button
                                 onClick={() => setIsEditing(true)}
+                                hidden={!canEditHealth}
                                 className="text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors border border-red-200 print:hidden"
                             >
                                 บันทึกข้อมูลสุขภาพ
@@ -572,6 +575,7 @@ export function HealthFeature({ session }: HealthFeatureProps) {
                                 </div>
                                 <button
                                     onClick={() => setIsEditing(true)}
+                                    hidden={!canEditHealth}
                                     className="text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors border border-red-200 print:hidden"
                                 >
                                     แก้ไข

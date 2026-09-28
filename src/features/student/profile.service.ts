@@ -25,7 +25,7 @@ export const ProfileService = {
             first_name: s.first_name,
             last_name: s.last_name,
             gender: s.genders?.name || '',
-            class_level: currentRoom?.levels?.name || '',
+            class_level: currentRoom?.levels?.grade_level_name || '',
             room: currentRoom?.room_name || '',
             program: '',
             status: s.student_statuses?.status_name || '',

@@ -1532,12 +1532,12 @@ export function DashboardFeature({ session }: { session: any }) {
                             {(cur.subjectTypes || []).length > 0 ? <DonutChart data={(cur.subjectTypes || []).map((t: any, i: number) => ({ label: `${t.type} (${t.count})`, value: t.count, color: `hsl(${180 + i * 50}, 55%, 50%)` }))} /> : <p className="text-sm text-slate-500">ไม่มีข้อมูล</p>}
                         </div>
                     </div>
-                    {/* Registration Stats */}
+                    {/* Students assigned to each classroom subject */}
                     {(d.registrationStats || []).length > 0 && (
                         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
                             <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
                                 <TrophyIcon className="w-5 h-5 text-red-500" />
-                                วิชายอดนิยม (จำนวนลงทะเบียน)
+                                จำนวนนักเรียนตามรายวิชาประจำห้อง
                             </h3>
                             <BarChart data={(d.registrationStats || []).slice(0, 10).map((r: any, i: number) => ({ label: r.name || 'ไม่ระบุ', value: r.reg_count, color: `hsl(${200 + i * 25}, 60%, 50%)` }))} height={150} />
                         </div>

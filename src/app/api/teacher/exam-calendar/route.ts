@@ -1,11 +1,11 @@
 import { TeacherExamCalendarService } from '@/features/teacher/exam-calendar.service';
 import { successResponse, errorResponse } from '@/lib/api-response';
+import { getAuthenticatedTeacherId } from '@/app/api/teacher/_utils';
 
 export async function GET(request: Request) {
     try {
-        const { searchParams } = new URL(request.url);
-        const teacher_id = Number(searchParams.get('teacher_id'));
-        if (!teacher_id || Number.isNaN(teacher_id)) return errorResponse('teacher_id required', 400);
+        const teacher_id = await getAuthenticatedTeacherId();
+        if (!teacher_id) return errorResponse('Unauthorized', 401);
 
         const exams = await TeacherExamCalendarService.getExamSchedule(teacher_id);
         return successResponse(exams);

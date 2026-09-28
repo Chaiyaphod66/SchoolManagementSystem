@@ -1,7 +1,11 @@
 import { SignJWT, jwtVerify, JWTPayload } from 'jose';
 import { cookies } from 'next/headers';
 
-const secretKey = process.env.JWT_SECRET || 'fallback-secret-key-for-dev-only-change-in-prod';
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET must be configured in production');
+}
+
+const secretKey = process.env.JWT_SECRET || 'fallback-secret-key-for-local-development-only';
 const key = new TextEncoder().encode(secretKey);
 
 export async function encrypt(payload: any) {
@@ -34,10 +38,22 @@ export async function setSessionCookie(payload: any) {
     const session = await encrypt(payload);
     const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
     const cookieStore = await cookies();
-    cookieStore.set('session', session, { expires, httpOnly: true, secure: false, path: '/' });
+    cookieStore.set('session', session, {
+        expires,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+    });
 }
 
 export async function clearSessionCookie() {
     const cookieStore = await cookies();
-    cookieStore.set('session', '', { expires: new Date(0), httpOnly: true, secure: false, path: '/' });
+    cookieStore.set('session', '', {
+        expires: new Date(0),
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+    });
 }

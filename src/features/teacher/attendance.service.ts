@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 
-type AttendanceRecordInput = { enrollment_id?: number; student_id?: number; status: string; remark?: string };
+type AttendanceRecordInput = { student_id?: number; status: string; remark?: string };
 type UiAttendanceRecordInput = { student_id: number; classroom_id?: number; section_id?: number; date: string; status: string; remark?: string };
 
 function formatLocalDate(date: Date) {
@@ -69,8 +69,8 @@ export const TeacherAttendanceService = {
     },
 
     async getAttendanceList(teacher_id: number, classroom_id: number, date: string) {
-        const teacher = await prisma.teachers.findFirst({
-            where: { OR: [{ id: teacher_id }, { user_id: teacher_id }] },
+        const teacher = await prisma.teachers.findUnique({
+            where: { id: teacher_id },
             select: { id: true },
         });
         if (!teacher) throw new Error('Teacher not found');

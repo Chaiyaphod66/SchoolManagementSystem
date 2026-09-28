@@ -6,7 +6,6 @@ import Portal from "@/components/Portal";
 type SectionFormState = {
     subject_id: string;
     subject_group: string;
-    teacher_id: string;
     class_level: string;
     day_of_week: string;
     time_range: string;
@@ -22,7 +21,6 @@ function emptySectionForm(currentYear?: number, currentSemester?: number): Secti
     return {
         subject_id: "",
         subject_group: "",
-        teacher_id: "",
         class_level: "",
         day_of_week: "",
         time_range: "",
@@ -35,9 +33,6 @@ function buildSectionPayload(form: SectionFormState) {
     const subject_id = Number(form.subject_id);
     if (!form.subject_id || Number.isNaN(subject_id)) throw new Error("กรุณาเลือกรายวิชา");
 
-    const teacher_id = Number(form.teacher_id);
-    if (!form.teacher_id || Number.isNaN(teacher_id)) throw new Error("กรุณาเลือกผู้สอน");
-
     const nextYear = Number(form.year);
     if (!form.year || Number.isNaN(nextYear)) throw new Error("ปีไม่ถูกต้อง");
 
@@ -46,7 +41,6 @@ function buildSectionPayload(form: SectionFormState) {
 
     return {
         subject_id,
-        teacher_id,
         class_level: form.class_level.trim() || null,
         classroom: null,
         day_of_week: form.day_of_week.trim() || null,
@@ -60,12 +54,11 @@ export function CurriculumFeature() {
     const [sections, setSections] = useState<any[]>([]);
     const [allSections, setAllSections] = useState<any[]>([]);
     const [subjects, setSubjects] = useState<any[]>([]);
-    const [teachers, setTeachers] = useState<any[]>([]);
     const [studentCounts, setStudentCounts] = useState<any[]>([]);
     const [learningSubjectGroups, setLearningSubjectGroups] = useState<any[]>([]);
     const [academicYears, setAcademicYears] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [year, setYear] = useState(2568);
+    const [year, setYear] = useState(() => new Date().getFullYear() + 543);
     const [semester, setSemester] = useState(1);
 
     const [filterClassLevel, setFilterClassLevel] = useState("");
@@ -97,14 +90,12 @@ export function CurriculumFeature() {
     useEffect(() => {
         Promise.all([
             DirectorApiService.getSubjects().catch(() => []),
-            DirectorApiService.getTeachers().catch(() => []),
             DirectorApiService.getSections().catch(() => []),
             DirectorApiService.getStudentCount().catch(() => []),
             DirectorApiService.getLearningSubjectGroups().catch(() => []),
             DirectorApiService.getAcademicYears().catch(() => []),
-        ]).then(([subjectRows, teacherRows, sectionRows, studentCountRows, groupRows, yearRows]) => {
+        ]).then(([subjectRows, sectionRows, studentCountRows, groupRows, yearRows]) => {
             setSubjects(subjectRows || []);
-            setTeachers(teacherRows || []);
             setAllSections(sectionRows || []);
             setStudentCounts(studentCountRows || []);
             setLearningSubjectGroups(groupRows || []);
@@ -115,7 +106,6 @@ export function CurriculumFeature() {
     const openCreateModal = () => {
         setCreatingSection(true);
         setEditingSection(null);
-        const defaultSubjectId = subjects[0]?.id != null ? String(subjects[0].id) : "";
         setForm({
             ...emptySectionForm(year, semester),
             subject_id: "",
@@ -136,8 +126,7 @@ export function CurriculumFeature() {
         setForm({
             subject_id: section.subject_id == null ? "" : String(section.subject_id),
             subject_group: section.subjects?.subject_group || "",
-            teacher_id: section.teacher_id == null ? "" : String(section.teacher_id),
-            class_level: section.class_level ?? section.classrooms?.levels?.name ?? "",
+            class_level: section.class_level ?? section.classrooms?.levels?.grade_level_name ?? "",
             day_of_week: section.day_of_week ?? firstSchedule?.day_of_weeks?.day_name_th ?? "",
             time_range: section.time_range ?? timeRangeFallback,
             year: section.year == null ? (section.semesters?.academic_years?.year_name ? String(section.semesters.academic_years.year_name) : String(year)) : String(section.year),
@@ -215,7 +204,7 @@ export function CurriculumFeature() {
 
     const filteredSections = sections.filter((s) => {
         if (filterClassLevel) {
-            const cl = String(s.class_level || s.classrooms?.levels?.name || "");
+            const cl = String(s.class_level || s.classrooms?.levels?.grade_level_name || "");
             if (cl !== filterClassLevel) return false;
         }
         if (filterSubjectGroup) {
@@ -230,8 +219,8 @@ export function CurriculumFeature() {
         if (codeA !== codeB) return codeA.localeCompare(codeB, "th");
 
         // 2. Sort by Class Level
-        const levelA = String(a.class_level || a.classrooms?.levels?.name || "");
-        const levelB = String(b.class_level || b.classrooms?.levels?.name || "");
+        const levelA = String(a.class_level || a.classrooms?.levels?.grade_level_name || "");
+        const levelB = String(b.class_level || b.classrooms?.levels?.grade_level_name || "");
         if (levelA !== levelB) return levelA.localeCompare(levelB, "th");
 
         return 0;
@@ -239,12 +228,12 @@ export function CurriculumFeature() {
 
     const optionSource = allSections.length > 0 ? allSections : sections;
     const classLevelOptions = uniqueSorted([
-        ...(optionSource || []).map((s: any) => String(s.class_level || s.classrooms?.levels?.name || "")),
+        ...(optionSource || []).map((s: any) => String(s.class_level || s.classrooms?.levels?.grade_level_name || "")),
         ...(studentCounts || []).map((r: any) => String(r.class_level || "")),
         form.class_level || ""
     ]);
     const filterClassLevelOptions = uniqueSorted(
-        (optionSource || []).map((s: any) => String(s.class_level || s.classrooms?.levels?.name || ""))
+        (optionSource || []).map((s: any) => String(s.class_level || s.classrooms?.levels?.grade_level_name || ""))
     );
     const filterSubjectGroupOptions = learningSubjectGroups.map((g: any) => String(g.group_name || ""));
 
@@ -257,8 +246,8 @@ export function CurriculumFeature() {
     const semesterOptions = Array.from(new Set([...(optionSource || []).map((s: any) => String(s.semester ?? "")).filter(Boolean), form.semester || "", String(semester), "1", "2"]))
         .filter(Boolean)
         .sort((a, b) => Number(a) - Number(b));
-    const dayOptions = ["", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์"];
-    const defaultTimeOptions = ["08:00-08:50", "09:00-09:50", "10:00-10:50", "11:00-11:50", "13:00-13:50", "14:00-14:50", "15:00-15:50"];
+    const dayOptions = ["", "วันจันทร์", "วันอังคาร", "วันพุธ", "วันพฤหัสบดี", "วันศุกร์"];
+    const defaultTimeOptions = ["08:30-09:30", "09:30-10:30", "10:30-11:30", "12:30-13:30", "13:30-14:30", "14:30-15:30"];
     const timeOptions = uniqueSorted([
         ...(optionSource || []).map((s: any) => String(s.time_range || "")),
         ...defaultTimeOptions,
@@ -271,14 +260,6 @@ export function CurriculumFeature() {
             (optionSource || [])
                 .filter((s: any) => s?.subject_id != null)
                 .map((s: any) => [Number(s.subject_id), { id: Number(s.subject_id), subject_code: s.subjects?.subject_code || "", name: s.subjects?.name || s.subjects?.subject_name || "" }])
-        ).values());
-
-    const teacherOptions = teachers.length > 0
-        ? teachers
-        : Array.from(new Map(
-            (optionSource || [])
-                .filter((s: any) => s?.teacher_id != null)
-                .map((s: any) => [Number(s.teacher_id), { id: Number(s.teacher_id), teacher_code: s.teachers?.teacher_code || "", first_name: s.teachers?.first_name || "", last_name: s.teachers?.last_name || "" }])
         ).values());
 
     const isModalOpen = creatingSection || !!editingSection;
@@ -356,7 +337,7 @@ export function CurriculumFeature() {
                             {filteredSections.map((s, i) => (
                                 <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
                                     {(() => {
-                                        const classLevel = s.class_level || s.classrooms?.levels?.name || "-";
+                                        const classLevel = s.class_level || s.classrooms?.levels?.grade_level_name || "-";
                                         return (
                                             <>
                                                 <td className="px-4 py-3 text-sm text-slate-500">{i + 1}</td>
@@ -434,25 +415,6 @@ export function CurriculumFeature() {
                                                 </optgroup>
                                             ));
                                         })()}
-                                    </select>
-                                </label>
-
-                                <label className="block">
-                                    <span className="text-sm font-medium text-slate-700">ผู้สอน</span>
-                                    <select
-                                        value={form.teacher_id}
-                                        onChange={(e) => setForm((p) => ({ ...p, teacher_id: e.target.value }))}
-                                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-pink-500 bg-white"
-                                    >
-                                        <option value="">เลือกครูผู้สอน</option>
-                                        {form.teacher_id && !teacherOptions.some((t: any) => String(t.id) === form.teacher_id) && (
-                                            <option value={form.teacher_id}>{`Teacher #${form.teacher_id}`}</option>
-                                        )}
-                                        {teacherOptions.map((t: any) => (
-                                            <option key={t.id} value={String(t.id)}>
-                                                {t.teacher_code ? `${t.teacher_code} - ` : ""}{`${t.first_name || ""} ${t.last_name || ""}`.trim() || `Teacher #${t.id}`}
-                                            </option>
-                                        ))}
                                     </select>
                                 </label>
 

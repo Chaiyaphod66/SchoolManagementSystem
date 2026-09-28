@@ -201,16 +201,16 @@ export const TeacherApiService = {
             body: JSON.stringify({ action: 'category_delete', id }) 
         });
     },
-    async addScoreHeader(section_id: number, header_name: string, max_score: number, indicator_ids?: number[], category_id?: number) {
+    async addScoreHeader(section_id: number, header_name: string, max_score: number, indicator_ids?: number[], category_id?: number, assessment_period?: string | null) {
         return fetchApi<any>('/api/teacher/scores', {
             method: 'POST',
-            body: JSON.stringify({ action: 'header_add', section_id, header_name, max_score, indicator_ids, category_id })
+            body: JSON.stringify({ action: 'header_add', section_id, header_name, max_score, indicator_ids, category_id, assessment_period })
         });
     },
-    async updateScoreHeader(id: number, title: string, max_score: number, indicator_ids?: number[], category_id?: number) {
+    async updateScoreHeader(id: number, title: string, max_score: number, indicator_ids?: number[], category_id?: number, assessment_period?: string | null) {
         return fetchApi<any>('/api/teacher/scores', {
             method: 'POST',
-            body: JSON.stringify({ action: 'header_update', id, title, max_score, indicator_ids, category_id })
+            body: JSON.stringify({ action: 'header_update', id, title, max_score, indicator_ids, category_id, assessment_period })
         });
     },
     async deleteScoreHeader(id: number) {

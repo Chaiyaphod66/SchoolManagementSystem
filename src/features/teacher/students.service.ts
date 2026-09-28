@@ -2,16 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-const LOG_FILE = 'debug_advisor.log';
-
-async function debugLog(msg: string) {
-    const timestamp = new Date().toISOString();
-    try {
-        await fs.appendFile(path.join(process.cwd(), LOG_FILE), `[${timestamp}] ${msg}\n`);
-    } catch (e) {
-        // ignore
-    }
-}
+async function debugLog(_msg: string) {}
 
 const STUDENT_PHOTO_REL_DIR = '/uploads/student-photos';
 const STUDENT_PHOTO_PUBLIC_DIR = path.join(process.cwd(), 'public', 'uploads', 'student-photos');
@@ -308,8 +299,8 @@ export const TeacherStudentsService = {
 
     // Homeroom teachers stay with the same classroom; classroom_assignments is the source of truth.
     async getAdvisoryStudents(teacher_id: number, year?: number, semester?: number, sub_mode: string = 'attributes') {
-        const teacher = await prisma.teachers.findFirst({
-            where: { OR: [{ id: teacher_id }, { user_id: teacher_id }] },
+        const teacher = await prisma.teachers.findUnique({
+            where: { id: teacher_id },
             select: { id: true, user_id: true },
         });
         if (!teacher) return [];

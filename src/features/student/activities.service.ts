@@ -1,10 +1,33 @@
 import { prisma } from '@/lib/prisma';
 import { resolveTargetValues, formatTargetValue } from '@/lib/target-resolver';
 
+async function getStudentAudience(studentId: number) {
+    const student = await prisma.students.findUnique({
+        where: { id: studentId },
+        select: {
+            user_id: true,
+            users: { select: { role_id: true } },
+            classroom_students: {
+                orderBy: { academic_year_id: 'desc' },
+                take: 1,
+                select: { classroom_id: true },
+            },
+        },
+    });
+    if (!student) return null;
+    return {
+        userId: student.user_id,
+        roleId: student.users.role_id,
+        classroomId: student.classroom_students[0]?.classroom_id ?? null,
+    };
+}
+
 export const ActivitiesService = {
-    async getAllActivities() {
-        // Use raw SQL to bypass schema sync issues
-        const events: any[] = await prisma.$queryRawUnsafe(`
+    async getAllActivities(studentId: number) {
+        const audience = await getStudentAudience(studentId);
+        if (!audience) return [];
+
+        const events: any[] = await prisma.$queryRaw`
             SELECT 
                 e.id, e.title, e.description, e.start_datetime, e.end_datetime, 
                 e.is_all_day, e.location, e.visibility, e.created_by,
@@ -20,8 +43,29 @@ export const ActivitiesService = {
             LEFT JOIN departments d ON e.department_id = d.id
             LEFT JOIN teachers t ON e.teacher_id = t.id
             LEFT JOIN name_prefixes np ON t.prefix_id = np.id
+            WHERE LOWER(e.visibility) IN ('public', 'all')
+               OR EXISTS (
+                    SELECT 1
+                    FROM event_targets audience_target
+                    WHERE audience_target.event_id = e.id
+                      AND (
+                          UPPER(audience_target.target_type) = 'ALL'
+                          OR (
+                              UPPER(audience_target.target_type) = 'USER'
+                              AND audience_target.target_value = ${String(audience.userId)}
+                          )
+                          OR (
+                              UPPER(audience_target.target_type) = 'ROLE'
+                              AND audience_target.target_value = ${String(audience.roleId)}
+                          )
+                          OR (
+                              UPPER(audience_target.target_type) = 'CLASSROOM'
+                              AND audience_target.target_value = ${String(audience.classroomId ?? '')}
+                          )
+                      )
+               )
             ORDER BY e.start_datetime DESC
-        `);
+        `;
 
         // Fetch participants count and targets separately to avoid complex SQL
         const eventIds = events.map(e => e.id);
@@ -112,6 +156,8 @@ export const ActivitiesService = {
     },
 
     async getStudentActivityEvaluations(student_id: number, year: number, semester: number) {
+        const audience = await getStudentAudience(student_id);
+        if (!audience) return [];
         const student = await prisma.students.findUnique({
             where: { id: student_id },
             select: { user_id: true }
@@ -136,24 +182,8 @@ export const ActivitiesService = {
         const participations: any[] = await prisma.$queryRaw`
             SELECT 
                 e.id, e.title, e.start_datetime as date, e.location,
-                COALESCE(al.form_id, 
-                    CASE e.event_type_id
-                        WHEN 1 THEN 18
-                        WHEN 2 THEN 19
-                        WHEN 3 THEN 21
-                        WHEN 4 THEN 20
-                        ELSE NULL
-                    END
-                ) as form_id,
-                COALESCE(ef.form_name, 
-                    CASE e.event_type_id
-                        WHEN 1 THEN 'ประเมินกิจกรรมด้านวิชาการ'
-                        WHEN 2 THEN 'ประเมินกิจกรรมด้านนันทนาการ'
-                        WHEN 3 THEN 'ประเมินกิจกรรมด้านวันสำคัญ / วันหยุดราชการ'
-                        WHEN 4 THEN 'ประเมินกิจกรรมด้านด้านการอบรม / ประชุม'
-                        ELSE NULL
-                    END
-                ) as form_name,
+                al.form_id,
+                ef.form_name,
                 EXISTS(
                     SELECT 1 FROM evaluation_responses er 
                     WHERE er.evaluator_user_id = ${student.user_id}
@@ -169,6 +199,20 @@ export const ActivitiesService = {
                     ${startDate}::date IS NOT NULL AND ${endDate}::date IS NOT NULL 
                     AND e.start_datetime >= ${startDate}::timestamp 
                     AND e.start_datetime <= ${endDate}::timestamp
+                )
+            )
+            AND (
+                LOWER(e.visibility) IN ('public', 'all')
+                OR EXISTS (
+                    SELECT 1
+                    FROM event_targets audience_target
+                    WHERE audience_target.event_id = e.id
+                      AND (
+                          UPPER(audience_target.target_type) = 'ALL'
+                          OR (UPPER(audience_target.target_type) = 'USER' AND audience_target.target_value = ${String(audience.userId)})
+                          OR (UPPER(audience_target.target_type) = 'ROLE' AND audience_target.target_value = ${String(audience.roleId)})
+                          OR (UPPER(audience_target.target_type) = 'CLASSROOM' AND audience_target.target_value = ${String(audience.classroomId ?? '')})
+                      )
                 )
             )
             ORDER BY e.start_datetime DESC
@@ -194,6 +238,11 @@ export const ActivitiesService = {
         data: { name: string; value: number | string }[],
         feedback?: string
     ) {
+        const visibleActivities = await this.getAllActivities(Number(student_id));
+        if (!visibleActivities.some((activity: any) => Number(activity.id) === Number(activity_id))) {
+            throw new Error('Activity is not available for this student');
+        }
+
         // Resolve user_id from student_id
         const student = await prisma.students.findUnique({
             where: { id: Number(student_id) },
@@ -214,9 +263,9 @@ export const ActivitiesService = {
         if (!semesterObj) throw new Error(`Semester ${semester}/${year} not found`);
         const semester_id = semesterObj.id;
 
-        // Determine form_id (custom or dynamic mapping)
+        // The evaluation form must be explicitly linked to the activity.
         const eventData: any[] = await prisma.$queryRawUnsafe(`
-            SELECT e.event_type_id, al.form_id as custom_form_id
+            SELECT al.form_id
             FROM events e
             LEFT JOIN event_evaluations al ON al.event_id = e.id
             WHERE e.id = ${Number(activity_id)}
@@ -225,12 +274,7 @@ export const ActivitiesService = {
         
         if (eventData.length === 0) throw new Error('Activity not found');
         
-        const form_id = eventData[0].custom_form_id || (
-            eventData[0].event_type_id === 1 ? 18 :
-            eventData[0].event_type_id === 2 ? 19 :
-            eventData[0].event_type_id === 3 ? 21 :
-            eventData[0].event_type_id === 4 ? 20 : null
-        );
+        const form_id = eventData[0].form_id;
         
         if (!form_id) throw new Error('No evaluation form linked to this activity');
 
@@ -279,7 +323,7 @@ export const ActivitiesService = {
                 const q = questionMap.get(qText);
                 
                 if (q) {
-                    const isText = q.question_type_id === 2;
+                    const isText = q.question_type_id === 4;
                     const score = !isText && typeof item.value === 'number' ? item.value : null;
                     const text = (isText || typeof item.value === 'string') ? String(item.value) : null;
                     
