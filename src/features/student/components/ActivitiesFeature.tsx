@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { StudentApiService } from "@/services/student-api.service";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/Skeleton";
@@ -21,8 +21,7 @@ const TH_MONTHS_SHORT = [
     "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
 ];
 
-export function ActivitiesFeature({ session }: ActivitiesFeatureProps) {
-    const student = session;
+export function ActivitiesFeature({}: ActivitiesFeatureProps) {
 
     // Data state
     // Queries
@@ -59,10 +58,6 @@ export function ActivitiesFeature({ session }: ActivitiesFeatureProps) {
 
     const shiftMonth = (delta: number) => {
         setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
-    };
-
-    const goToToday = () => {
-        setCurrentDate(new Date());
     };
 
     // Calendar logic
@@ -146,7 +141,6 @@ export function ActivitiesFeature({ session }: ActivitiesFeatureProps) {
                     isCurrentMonth = false;
                 } else {
                     displayDay = dayNum;
-                    const d = new Date(year, month, dayNum);
                     // Use ISO date string format (YYYY-MM-DD) or local date for key
                     // To match the eventMap key (ISO string slice 0,10):
                     dateKey = toDateKey(new Date(year, month, dayNum));

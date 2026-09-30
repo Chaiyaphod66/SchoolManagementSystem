@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
 import { TeacherApiService } from "@/services/teacher-api.service";
 import toast from "react-hot-toast";
 import Portal from "@/components/Portal";
@@ -18,7 +17,7 @@ export function TeachingEvaluationFeature({ session }: TeachingEvaluationFeature
     const teacher_id = session.id;
     const [evalMode, setEvalMode] = useState<EvaluationMode>('subject');
     const [advisorSubMode, setAdvisorSubMode] = useState<AdvisorSubMode>('attributes');
-    const [activeTab, setActiveTab] = useState<'teacher_to_student' | 'student_to_teacher'>('teacher_to_student');
+    const [activeTab] = useState<'teacher_to_student' | 'student_to_teacher'>('teacher_to_student');
 
     // Filter states
     const [year, setYear] = useState<number>(getCurrentAcademicYearBE());
@@ -60,10 +59,10 @@ export function TeachingEvaluationFeature({ session }: TeachingEvaluationFeature
                 setAssignments(data);
 
                 // If currently selected ID is not in new data, reset it
-                if (selectedAssignmentId) {
-                    const isValid = data.some(a => a.teaching_assignment_id === selectedAssignmentId);
-                    if (!isValid) setSelectedAssignmentId(null);
-                }
+                setSelectedAssignmentId((current) => {
+                    if (!current) return current;
+                    return data.some(a => a.teaching_assignment_id === current) ? current : null;
+                });
             } catch (err) {
                 console.error("Failed to fetch assignments", err);
                 setAssignments([]);
@@ -131,7 +130,7 @@ export function TeachingEvaluationFeature({ session }: TeachingEvaluationFeature
                 feedback: template.feedback || ""
             });
             setIsModalOpen(true);
-        } catch (err) {
+        } catch {
             toast.error("ไม่สามารถโหลดแบบประเมินได้");
         }
     };
@@ -165,7 +164,7 @@ export function TeachingEvaluationFeature({ session }: TeachingEvaluationFeature
             // Refresh student list
             const data = await TeacherApiService.getSectionStudentsForEvaluation(teacher_id, selectedAssignmentId!, year, semester);
             setStudents(data);
-        } catch (err) {
+        } catch {
             toast.error("เกิดข้อผิดพลาดในการบันทึก");
         } finally {
             setIsSubmitting(false);
@@ -190,7 +189,7 @@ export function TeachingEvaluationFeature({ session }: TeachingEvaluationFeature
             });
             setAdvisorEvalForm({ scores: initialScores, feedback: template.feedback || "" });
             setExpandedAdvisorStudentId(studentId);
-        } catch (err) {
+        } catch {
             toast.error("ไม่สามารถโหลดแบบประเมินได้");
         } finally {
             setAdvisorEvalLoadingTemplate(false);

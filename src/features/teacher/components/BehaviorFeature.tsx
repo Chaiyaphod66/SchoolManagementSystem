@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { TeacherApiService } from '@/services/teacher-api.service';
 import { getCurrentAcademicYearBE, getAcademicSemesterDefault } from '@/features/student/academic-term';
-import { History, X, CheckCircle2, AlertCircle, Clock, Info } from 'lucide-react';
+import { History, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import Portal from "@/components/Portal";
 
@@ -45,7 +45,7 @@ export function BehaviorFeature({ session }: BehaviorFeatureProps) {
     const [behaviorHistory, setBehaviorHistory] = useState<any[]>([]);
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
-    const fetchPendingRecords = async () => {
+    const fetchPendingRecords = useCallback(async () => {
         setIsPendingLoading(true);
         try {
             const data = await TeacherApiService.getBehaviorPendingRecords();
@@ -56,7 +56,7 @@ export function BehaviorFeature({ session }: BehaviorFeatureProps) {
         } finally {
             setIsPendingLoading(false);
         }
-    };
+    }, []);
 
     const fetchHistory = async (student: any) => {
         setSelectedStudentForHistory(student);
@@ -73,15 +73,7 @@ export function BehaviorFeature({ session }: BehaviorFeatureProps) {
         }
     };
 
-    useEffect(() => {
-        initData();
-    }, []);
-
-    useEffect(() => {
-        fetchStudents();
-    }, [session.id, year, semester, selectedLevel]);
-
-    const initData = async () => {
+    const initData = useCallback(async () => {
         try {
             const metaData = await TeacherApiService.getBehaviorMetadata();
 
@@ -103,9 +95,9 @@ export function BehaviorFeature({ session }: BehaviorFeatureProps) {
         } catch (error) {
             console.error('Error initializing behavior data:', error);
         }
-    };
+    }, [fetchPendingRecords, isApprover]);
 
-    const fetchStudents = async () => {
+    const fetchStudents = useCallback(async () => {
         setIsLoading(true);
         try {
             const data = await TeacherApiService.getBehaviorFilteredStudents({
@@ -121,7 +113,15 @@ export function BehaviorFeature({ session }: BehaviorFeatureProps) {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [isApprover, selectedLevel, semester, session.id, session.role, year]);
+
+    useEffect(() => {
+        initData();
+    }, [initData]);
+
+    useEffect(() => {
+        fetchStudents();
+    }, [fetchStudents]);
 
     const handleOpenModal = (student: any) => {
         setSelectedStudent(student);

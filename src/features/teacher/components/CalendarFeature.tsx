@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import Portal from "@/components/Portal";
 import { TeacherApiService } from "@/services/teacher-api.service";
 import { fetchApi } from "@/services/api-client";
-import { MapPin, User, Bookmark, ChevronDown, Building2, DoorOpen, Users } from "lucide-react";
+import { MapPin, User, Bookmark, Building2, DoorOpen, Users } from "lucide-react";
 
 export type Target = {
     target_type: string;
@@ -34,7 +34,7 @@ const getEventTextOnlyColor = (ev: any) => {
     return EVENT_COLORS[id % EVENT_COLORS.length].text;
 };
 
-export function CalendarFeature({ session }: { session: any }) {
+export function CalendarFeature({}: { session: any }) {
     const [events, setEvents] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -45,7 +45,7 @@ export function CalendarFeature({ session }: { session: any }) {
     const [eventTypes, setEventTypes] = useState<any[]>([]);
     const [buildings, setBuildings] = useState<any[]>([]);
     const [rooms, setRooms] = useState<any[]>([]);
-    const [filterTeacherId, setFilterTeacherId] = useState<string>("");
+    const [filterTeacherId] = useState<string>("");
     const [targetTypes, setTargetTypes] = useState<any[]>([]);
     const [targetOptions, setTargetOptions] = useState<any[]>([]);
     const [loadingTargets, setLoadingTargets] = useState(false);
@@ -209,7 +209,7 @@ export function CalendarFeature({ session }: { session: any }) {
         
         if (start > end) end = new Date(start);
 
-        let current = new Date(start);
+        const current = new Date(start);
         let safeCounter = 0;
         while (current <= end && safeCounter < 365) {
             const key = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;

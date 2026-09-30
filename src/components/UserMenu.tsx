@@ -22,8 +22,6 @@ export default function UserMenu({ session }: { session: any }) {
         );
     }
 
-    const initial = session.name ? session.name.charAt(0).toUpperCase() : 'U';
-
     return (
         <div className="flex items-center gap-4">
             <div className="hidden sm:flex flex-col items-end">

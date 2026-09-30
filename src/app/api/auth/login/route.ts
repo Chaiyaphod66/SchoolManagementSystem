@@ -2,6 +2,11 @@ import { AuthService } from '@/features/auth/auth.service';
 import { setSessionCookie } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 
+function requestUsesHttps(request: Request) {
+    const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+    return forwardedProto ? forwardedProto === 'https' : new URL(request.url).protocol === 'https:';
+}
+
 export async function POST(request: Request) {
     try {
         const { code, password, role } = await request.json();
@@ -13,7 +18,7 @@ export async function POST(request: Request) {
         const payload = await AuthService.authenticateUser(code, password, role);
 
         // Set HTTPOnly Cookie
-        await setSessionCookie(payload);
+        await setSessionCookie(payload, { secure: requestUsesHttps(request) });
 
         return successResponse(payload, 'Login successful');
     } catch (error) {

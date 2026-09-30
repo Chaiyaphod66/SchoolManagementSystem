@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DirectorApiService } from "@/services/director-api.service";
 import Portal from "@/components/Portal";
 
@@ -73,7 +73,7 @@ export function CurriculumFeature() {
         DirectorApiService.getSections().then((rows) => setAllSections(rows || [])).catch(() => { });
     };
 
-    const load = () => {
+    const load = useCallback(() => {
         setLoading(true);
         DirectorApiService.getSections(year, semester)
             .then(async (d) => {
@@ -81,11 +81,11 @@ export function CurriculumFeature() {
                 setLoading(false);
             })
             .catch(() => setLoading(false));
-    };
+    }, [semester, year]);
 
     useEffect(() => {
         load();
-    }, [year, semester]);
+    }, [load]);
 
     useEffect(() => {
         Promise.all([

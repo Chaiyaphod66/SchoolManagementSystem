@@ -4,7 +4,6 @@ import { successResponse, errorResponse } from "@/lib/api-response";
 export async function GET(req: Request, { params }: { params: Promise<{ type: string }> }) {
     try {
         const { type } = await params;
-        console.log("OPTIONS API TYPE:", type);
 
         if (type === "grades") {
             const query = await prisma.grade_level.findMany({

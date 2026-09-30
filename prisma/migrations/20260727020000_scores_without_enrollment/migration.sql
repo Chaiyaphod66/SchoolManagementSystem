@@ -1,6 +1,16 @@
 ALTER TABLE "grade_categories"
 DROP CONSTRAINT "grade_categories_teaching_assignment_id_fkey";
 
+-- Legacy categories pointed to homeroom assignments and did not identify a
+-- subject. Refuse an ambiguous automatic conversion instead of accidentally
+-- attaching real scores to an unrelated teaching assignment.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM "grade_categories") THEN
+        RAISE EXCEPTION 'grade_categories contains legacy rows; map classroom_assignment_id to teaching_assignment_id explicitly before deploying this migration';
+    END IF;
+END $$;
+
 ALTER TABLE "grade_categories"
 RENAME COLUMN "classroom_assignment_id" TO "teaching_assignment_id";
 

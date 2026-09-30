@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { TeacherFitnessService } from '@/features/teacher/fitness.service';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { getAuthenticatedTeacherId, teacherCanAccessStudent } from '@/app/api/teacher/_utils';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(request: Request) {
     try {
@@ -88,7 +88,13 @@ export async function POST(request: Request) {
         }
 
         const studentId = Number(body.student_id);
-        if (!studentId || !await teacherCanAccessStudent(teacherId, studentId)) {
+        const academicYear = body.year
+            ? await prisma.academic_years.findUnique({
+                where: { year_name: String(body.year) },
+                select: { id: true },
+            })
+            : null;
+        if (!studentId || !academicYear || !await teacherCanAccessStudent(teacherId, studentId, academicYear.id)) {
             return errorResponse('Forbidden student', 403);
         }
         const data = await TeacherFitnessService.saveFitnessTest({ ...body, teacher_id: teacherId });

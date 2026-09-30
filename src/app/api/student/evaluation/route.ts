@@ -18,12 +18,9 @@ const submitEvaluationSchema = z.object({
 });
 
 export async function GET(request: Request) {
-    console.log(`[GET /api/student/evaluation] Request hit: ${request.url}`);
     try {
         const { searchParams } = new URL(request.url);
         const action = searchParams.get('action');
-        console.log(`[GET /api/student/evaluation] action: ${action}`);
-
         if (action === 'topics') {
             const yearStr = searchParams.get('year');
             const semesterStr = searchParams.get('semester');
@@ -92,19 +89,15 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    console.log(`[POST /api/student/evaluation] Request hit`);
     try {
         const session = await getSession();
         const sessionResult = parseStudentIdFromSession(session);
         if (!sessionResult.ok) {
-            console.log(`[POST /api/student/evaluation] session failed:`, sessionResult.response);
             return sessionResult.response;
         }
         const student_id = sessionResult.studentId;
 
         const body = await request.json();
-        console.log(`[POST /api/student/evaluation] body:`, JSON.stringify(body).substring(0, 100));
-
         const parsed = submitEvaluationSchema.safeParse(body);
         if (!parsed.success) {
             return errorResponse("Invalid payload format", 400, parsed.error.format());

@@ -115,7 +115,7 @@ async function ensureAdvisorEvaluationForm() {
         `, formId, categoryId);
 
         // Since questions require sections, we need to create a section first if missing
-        let sectionMax: any[] = await tx.$queryRawUnsafe(`SELECT MAX(id) as max_id FROM evaluation_sections`);
+        const sectionMax: any[] = await tx.$queryRawUnsafe(`SELECT MAX(id) as max_id FROM evaluation_sections`);
         const sectionId = nextId(sectionMax[0].max_id);
         await tx.$executeRawUnsafe(`
             INSERT INTO evaluation_sections (id, form_id, section_name, order_number)

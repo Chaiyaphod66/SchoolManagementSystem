@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { StudentApiService } from "@/services/student-api.service";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/Skeleton";
-import { getAcademicSemesterDefault, getAcademicYearOptionsForStudent, getCurrentAcademicYearBE } from "@/features/student/academic-term";
+import { getAcademicSemesterDefault, getCurrentAcademicYearBE } from "@/features/student/academic-term";
 
 interface LearningResultsFeatureProps {
     session: any;
@@ -31,8 +31,14 @@ export function LearningResultsFeature({
         queryFn: () => StudentApiService.getAcademicYears(),
     });
 
-    const yearOptionsData = (academicYearsQuery.data as any[]) || [];
-    const yearOptions = yearOptionsData.map((y: any) => Number(y.year_name));
+    const yearOptionsData = useMemo(
+        () => (academicYearsQuery.data as any[]) || [],
+        [academicYearsQuery.data],
+    );
+    const yearOptions = useMemo(
+        () => yearOptionsData.map((y: any) => Number(y.year_name)),
+        [yearOptionsData],
+    );
 
     // Select state
     const [year, setYear] = useState<number>(getCurrentAcademicYearBE());
@@ -47,7 +53,10 @@ export function LearningResultsFeature({
     const [selectedFormName, setSelectedFormName] = useState<string>('แบบประเมินคุณลักษณะอันพึงประสงค์');
 
     const selectedYearLookup = yearOptionsData.find((y: any) => Number(y.year_name) === Number(year));
-    const semesterOptions = selectedYearLookup?.semesters || [];
+    const semesterOptions = useMemo(
+        () => selectedYearLookup?.semesters || [],
+        [selectedYearLookup],
+    );
 
     // Sync year state if data is loaded
     useEffect(() => {
@@ -62,7 +71,10 @@ export function LearningResultsFeature({
         queryKey: ["student", "grades", "all"],
         queryFn: () => StudentApiService.getGrades(),
     });
-    const history = Array.isArray(enrollmentHistoryQuery.data) ? enrollmentHistoryQuery.data : [];
+    const history = useMemo(
+        () => Array.isArray(enrollmentHistoryQuery.data) ? enrollmentHistoryQuery.data : [],
+        [enrollmentHistoryQuery.data],
+    );
 
     const registeredQuery = useQuery({
         queryKey: ["student", "registered", year, semester],
@@ -75,8 +87,11 @@ export function LearningResultsFeature({
         queryFn: () => StudentApiService.getAdvisorEvaluation(year, semester),
         enabled: !!student?.id && activeResultTab === "advisor"
     });
-    const advisorEvalData = (queryAdvisor.data as any) || { advisors: [], evaluations: [] };
-    const advisorList = advisorEvalData.advisors || [];
+    const advisorEvalData = useMemo(
+        () => (queryAdvisor.data as any) || { advisors: [], evaluations: [] },
+        [queryAdvisor.data],
+    );
+    const advisorList = useMemo(() => advisorEvalData.advisors || [], [advisorEvalData]);
     const allAdvisorEvaluations = advisorEvalData.evaluations || [];
 
     // Auto-select first advisor if none selected
@@ -142,30 +157,6 @@ export function LearningResultsFeature({
     };
 
 
-
-    const renderProgressBar = (score: number) => {
-        const displayScore = Number.isFinite(score) ? (Number.isInteger(score) ? score : score.toFixed(2)) : "-";
-        const percent = Number.isFinite(score) ? (score / 5) * 100 : 0;
-
-        let color = "bg-red-600";
-        if (score <= 2) color = "bg-red-500";
-        else if (score == 3) color = "bg-red-500";
-
-        return (
-            <div>
-                <div className="flex justify-between text-sm mb-1 text-slate-600">
-                    <span>คะแนน:</span>
-                    <strong className="text-slate-800">{displayScore}/5</strong>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                    <div
-                        className={`h-2.5 rounded-full ${color}`}
-                        style={{ width: `${percent}%` }}
-                    ></div>
-                </div>
-            </div>
-        );
-    };
 
     const dynamicYearOptions = useMemo(() => {
         const years = new Set<string>();

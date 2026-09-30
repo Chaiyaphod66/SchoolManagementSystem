@@ -5,7 +5,7 @@ export function getCurrentAcademicYearBE(date = new Date()) {
     return month < 5 ? yearBE - 1 : yearBE;
 }
 
-export function getAcademicSemesterDefault(date = new Date()) {
+export function getAcademicSemesterDefault() {
     return 1;
 }
 

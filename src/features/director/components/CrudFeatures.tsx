@@ -1,9 +1,9 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { DirectorApiService } from "@/services/director-api.service";
 import Portal from "@/components/Portal";
 import { ActivitiesCalendar } from "./ActivitiesCalendar";
-import { List as ListIcon, Calendar as CalendarIcon, Trash2, Pencil, Building2, Users2, Clock, MapPin, ChevronDown, Check, Plus, Trash, X, DoorOpen, Users } from "lucide-react";
+import { List as ListIcon, Calendar as CalendarIcon, Trash2, Pencil, Building2, DoorOpen, Users } from "lucide-react";
 import { fetchApi } from "@/services/api-client";
 
 export type CrudColumn = {
@@ -260,18 +260,18 @@ function CrudFeature({
     const [savingEdit, setSavingEdit] = useState(false);
     const [expandedId, setExpandedId] = useState<number | null>(null);
 
-    useEffect(() => {
-        if (initialEditItem) {
-            openEditModal(initialEditItem);
-        }
-    }, [initialEditItem]);
-
     const toggleExpand = (id: number) => {
         setExpandedId(expandedId === id ? null : id);
     };
 
-    const resolvedCreateFields = typeof createFields === "function" ? createFields(items) : (createFields || []);
-    const resolvedEditFields = typeof editFields === "function" ? editFields(items) : (editFields || []);
+    const resolvedCreateFields = useMemo(
+        () => typeof createFields === "function" ? createFields(items) : (createFields || []),
+        [createFields, items],
+    );
+    const resolvedEditFields = useMemo(
+        () => typeof editFields === "function" ? editFields(items) : (editFields || []),
+        [editFields, items],
+    );
 
     const filteredItems = items.filter((item) => {
         if (!customFilters) return true;
@@ -299,16 +299,24 @@ function CrudFeature({
             .catch(() => setLoading(false));
     };
 
+    // Load initially and refresh when search is cleared or filters change.
     useEffect(() => {
-        load();
-    }, []);
+        if (search !== "") return;
 
-    // Auto-refresh when search is cleared
-    useEffect(() => {
-        if (search === "") {
-            load();
-        }
-    }, [search]);
+        let cancelled = false;
+        setLoading(true);
+        fetchFn(undefined, Object.keys(filterValues).length > 0 ? filterValues : undefined)
+            .then((data) => {
+                if (cancelled) return;
+                setItems(data || []);
+                setLoading(false);
+            })
+            .catch(() => {
+                if (!cancelled) setLoading(false);
+            });
+
+        return () => { cancelled = true; };
+    }, [fetchFn, filterValues, search]);
 
     const handleDelete = async (id: number) => {
         if (!confirm("ลบรายการนี้?")) return;
@@ -358,7 +366,7 @@ function CrudFeature({
         }
     };
 
-    const openEditModal = (item: any) => {
+    const openEditModal = useCallback((item: any) => {
         if (!resolvedEditFields.length) return;
 
         const mappedItem: any = { ...item };
@@ -377,7 +385,11 @@ function CrudFeature({
 
         setEditingItem(item);
         setEditValues(buildInitialValues(resolvedEditFields, mappedItem));
-    };
+    }, [resolvedEditFields]);
+
+    useEffect(() => {
+        if (initialEditItem) openEditModal(initialEditItem);
+    }, [initialEditItem, openEditModal]);
 
     const closeEditModal = () => {
         if (savingEdit) return;
@@ -392,8 +404,6 @@ function CrudFeature({
         let payload: any;
         try {
             payload = buildPayloadFromValues(resolvedEditFields, editValues);
-
-            console.log("EDIT PAYLOAD:", payload); // [DEBUG]
 
         } catch (e: any) {
             alert(e?.message || "ข้อมูลไม่ถูกต้อง");
@@ -587,11 +597,8 @@ function CrudFeature({
 }
 export function TeachersFeature() {
     const [positionOptions, setPositionOptions] = useState<{ id: number; title: string }[]>([]);
-    const [gradeLevelOptions, setGradeLevelOptions] = useState<string[]>([]);
-
     useEffect(() => {
         DirectorApiService.getTeacherPositions().then(setPositionOptions).catch(() => { });
-        DirectorApiService.getGradeLevels().then(setGradeLevelOptions).catch(() => { });
     }, []);
 
     const posSelectOptions = ["", ...positionOptions.map(p => p.title)];
@@ -638,7 +645,7 @@ export function TeachersFeature() {
             createFields={() => {
                 return [
                     { key: "teacher_code", label: "Username (รหัสครู)", required: true },
-                    { key: "password", label: "Password", type: "password", placeholder: "เว้นว่างเพื่อใช้ค่าเริ่มต้น 1234" },
+                    { key: "password", label: "รหัสผ่าน", type: "password", required: true, placeholder: "อย่างน้อย 8 ตัวอักษร" },
                     { key: "prefix", label: "คำนำหน้า", type: "select", options: ["เลือกคำนำหน้า", "นาย", "นาง", "นางสาว"] },
                     { key: "first_name", label: "ชื่อ" },
                     { key: "last_name", label: "นามสกุล" },
@@ -650,7 +657,7 @@ export function TeachersFeature() {
             editFields={() => {
                 return [
                     { key: "teacher_code", label: "Username (รหัสครู)", required: true },
-                    { key: "password", label: "Password", type: "password", placeholder: "เว้นว่างถ้าไม่เปลี่ยนรหัสผ่าน" },
+                    { key: "password", label: "รหัสผ่าน", type: "password", placeholder: "เว้นว่างถ้าไม่เปลี่ยนรหัสผ่าน" },
                     { key: "prefix", label: "คำนำหน้า", type: "select", options: ["", "นาย", "นาง", "นางสาว"] },
                     { key: "first_name", label: "ชื่อ" },
                     { key: "last_name", label: "นามสกุล" },
@@ -781,7 +788,7 @@ export function StudentsFeature() {
 
                 return [
                     { key: "student_code", label: "Username (รหัสนักเรียน)", required: true },
-                    { key: "password", label: "Password", type: "password", placeholder: "เว้นว่างเพื่อใช้ค่าเริ่มต้น 1234" },
+                    { key: "password", label: "รหัสผ่าน", type: "password", required: true, placeholder: "อย่างน้อย 8 ตัวอักษร" },
                     { key: "prefix", label: "คำนำหน้า", type: "select", options: prefixOptions },
                     { key: "first_name", label: "ชื่อ" },
                     { key: "last_name", label: "นามสกุล" },
@@ -814,7 +821,7 @@ export function StudentsFeature() {
 
                 return [
                     { key: "student_code", label: "Username (รหัสนักเรียน)", required: true },
-                    { key: "password", label: "Password", type: "password", placeholder: "เว้นว่างถ้าไม่เปลี่ยนรหัสผ่าน" },
+                    { key: "password", label: "รหัสผ่าน", type: "password", placeholder: "เว้นว่างถ้าไม่เปลี่ยนรหัสผ่าน" },
                     { key: "prefix", label: "คำนำหน้า", type: "select", options: prefixOptions },
                     { key: "first_name", label: "ชื่อ" },
                     { key: "last_name", label: "นามสกุล" },
@@ -1265,7 +1272,6 @@ export function ActivitiesFeature() {
     const [eventTypes, setEventTypes] = useState<any[]>([]);
     const [buildings, setBuildings] = useState<any[]>([]);
     const [targetTypes, setTargetTypes] = useState<any[]>([]);
-    const [calendarKey, setCalendarKey] = useState(0);
     const [academicYears, setAcademicYears] = useState<any[]>([]);
 
     type Target = { target_type: string; target_value?: string | null };
@@ -1659,7 +1665,6 @@ export function ActivitiesFeature() {
                 />
             ) : (
                 <ActivitiesCalendar
-                    key={calendarKey}
                     onBack={() => setViewMode('list')}
                 />
             )}

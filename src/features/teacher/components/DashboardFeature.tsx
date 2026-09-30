@@ -7,15 +7,12 @@ export function DashboardFeature({ session }: { session: any }) {
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [now, setNow] = useState(new Date());
 
     useEffect(() => {
         setLoading(true);
         setError(null);
-        console.log(`[Dashboard] Loading for session.id: ${session.id}...`);
         TeacherApiService.getDashboardSummary(session.id)
             .then(d => {
-                console.log(`[Dashboard] Data received:`, d);
                 setData(d);
                 setLoading(false);
             })
@@ -25,12 +22,7 @@ export function DashboardFeature({ session }: { session: any }) {
                 setLoading(false);
             });
 
-        const timer = setInterval(() => setNow(new Date()), 30000);
-        return () => clearInterval(timer);
     }, [session.id]);
-
-    const dateStr = now.toLocaleDateString("th-TH", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-    const timeStr = now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
     if (loading) {
         return (

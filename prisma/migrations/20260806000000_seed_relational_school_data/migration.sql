@@ -43,7 +43,8 @@ SET date_of_birth = COALESCE(
     parent_phone = COALESCE(s.parent_phone, CONCAT('080', LPAD(MOD(s.id, 10000000)::text, 7, '0'))),
     updated_at = CURRENT_TIMESTAMP
 FROM current_class cc
-WHERE cc.student_id = s.id;
+WHERE cc.student_id = s.id
+  AND current_setting('school.enable_demo_profile_updates', true) = 'on';
 
 -- Complete basic teacher profile fields without changing names or official identifiers.
 UPDATE teachers
@@ -51,7 +52,8 @@ SET phone = COALESCE(phone, CONCAT('081', LPAD(MOD(id, 10000000)::text, 7, '0'))
     hire_date = COALESCE(hire_date, make_date(2012 + MOD(id, 8), 5, 1)),
     birth_date = COALESCE(birth_date, make_date(1978 + MOD(id, 15), 1 + MOD(id, 12), 1 + MOD(id, 27))),
     blood_type = COALESCE(blood_type, (ARRAY['A', 'B', 'O', 'AB'])[1 + MOD(id, 4)]),
-    updated_at = CURRENT_TIMESTAMP;
+    updated_at = CURRENT_TIMESTAMP
+WHERE current_setting('school.enable_demo_profile_updates', true) = 'on';
 
 -- Curriculum indicators: two measurable indicators per existing subject.
 INSERT INTO indicators (subject_id, code, description, order_number)
@@ -138,12 +140,7 @@ JOIN classroom_students cs
   ON cs.classroom_id = ta.classroom_id AND cs.academic_year_id = ay.id
 JOIN grade_categories gc ON gc.teaching_assignment_id = ta.id
 JOIN assessment_items ai ON ai.grade_category_id = gc.id
-ON CONFLICT (student_id, assessment_item_id) DO UPDATE
-SET score = EXCLUDED.score,
-    is_missing = false,
-    is_passed = EXCLUDED.is_passed,
-    remark = EXCLUDED.remark,
-    updated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (student_id, assessment_item_id) DO NOTHING;
 
 -- Calculate final grades from the weighted assessment data and the configured scale.
 WITH totals AS (
@@ -174,13 +171,7 @@ INSERT INTO final_grades
 SELECT student_id, subject_id, semester_id, total_score, letter_grade, grade_point,
        grade_scale_id, teacher_id, CURRENT_TIMESTAMP, false
 FROM graded
-ON CONFLICT (student_id, subject_id, semester_id) DO UPDATE
-SET total_score = EXCLUDED.total_score,
-    letter_grade = EXCLUDED.letter_grade,
-    grade_point = EXCLUDED.grade_point,
-    grade_scale_id = EXCLUDED.grade_scale_id,
-    calculated_by = EXCLUDED.calculated_by,
-    calculated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (student_id, subject_id, semester_id) DO NOTHING;
 
 -- Midterm and final examination slots, spread across four days per classroom.
 WITH current_semester AS (
@@ -210,11 +201,7 @@ SELECT r.id,
        CASE WHEN MOD(r.slot_no::integer - 1, 2) = 0 THEN TIME '10:00' ELSE TIME '14:30' END
 FROM ranked r
 CROSS JOIN (VALUES ('MIDTERM'), ('FINAL')) AS exam(exam_type)
-ON CONFLICT (teaching_assignment_id, exam_type) DO UPDATE
-SET exam_date = EXCLUDED.exam_date,
-    start_time = EXCLUDED.start_time,
-    end_time = EXCLUDED.end_time,
-    updated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (teaching_assignment_id, exam_type) DO NOTHING;
 
 -- Ten recent school days of attendance for every current student.
 WITH current_context AS (

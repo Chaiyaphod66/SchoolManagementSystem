@@ -127,10 +127,8 @@ export async function POST(request: Request) {
         if (action === 'category_type_delete') {
             const typeId = Number(body.id);
             if (!typeId) return errorResponse('id required', 400);
-            console.log("Attempting to delete category type ID:", typeId);
             try {
                 const data = await TeacherScoresService.deleteCategoryType(typeId);
-                console.log("Delete category type result:", data);
                 return successResponse(data);
             } catch (err: any) {
                 console.error("Failed to delete category type:", err.message);

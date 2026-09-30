@@ -1,10 +1,8 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TeacherApiService } from "@/services/teacher-api.service";
-import {  } from "lucide-react";
-import { getCurrentAcademicYearBE } from "@/features/student/academic-term";
 
 function fmtDate(value: any) {
     if (!value) return "-";
@@ -32,16 +30,11 @@ function fmtPct(value: any) {
     return `${fmtNum(n, 2)}%`;
 }
 
-function toIntOrNull(value: any) {
-    const n = Number(value);
-    return Number.isFinite(n) ? Math.trunc(n) : null;
-}
-
 function hasMeaningfulValue(v: any) {
     return v !== null && v !== undefined && String(v).trim() !== "" && String(v).trim() !== "-";
 }
 
-function formatClassRoomDisplay(classLevel: any, room: any) {
+function formatClassRoomDisplay(classLevel: any) {
     const level = String(classLevel || "").trim();
     return level || "-";
 }
@@ -141,18 +134,6 @@ export function StudentProfileFeature({ session }: { session: any }) {
     const [profile, setProfile] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const [advisorEvalYear, setAdvisorEvalYear] = useState<number>(getCurrentAcademicYearBE());
-    const [advisorEvalSemester, setAdvisorEvalSemester] = useState<number>(1);
-    const [advisorEvalLoading, setAdvisorEvalLoading] = useState(false);
-    const [advisorEvalSaving, setAdvisorEvalSaving] = useState(false);
-    const [advisorEvalMessage, setAdvisorEvalMessage] = useState("");
-    const [advisorEvalTopics, setAdvisorEvalTopics] = useState<{ id?: number; name: string }[]>([]);
-    const [advisorEvalScores, setAdvisorEvalScores] = useState<Record<string, number>>({});
-    const [advisorEvalFeedback, setAdvisorEvalFeedback] = useState("");
-    const [advisorEvalSubmittedAt, setAdvisorEvalSubmittedAt] = useState<any>(null);
-    const [learningYear, setLearningYear] = useState<number>(getCurrentAcademicYearBE());
-    const [learningSemester, setLearningSemester] = useState<number>(1);
-
     useEffect(() => {
         const load = async () => {
             if (!studentId || Number.isNaN(studentId)) {
@@ -177,54 +158,6 @@ export function StudentProfileFeature({ session }: { session: any }) {
 
         load();
     }, [studentId, session.id]);
-
-    useEffect(() => {
-        const loadAdvisorEvaluationTemplate = async () => {
-            if (!studentId || Number.isNaN(studentId) || !session?.id) return;
-
-            setAdvisorEvalLoading(true);
-            setAdvisorEvalMessage("");
-            try {
-                const data = await TeacherApiService.getStudentAdvisorEvaluationTemplate(
-                    studentId,
-                    session.id,
-                    advisorEvalYear,
-                    advisorEvalSemester
-                );
-
-                const topics = Array.isArray(data?.topics) ? data.topics : [];
-                const current = Array.isArray(data?.current) ? data.current : [];
-                const currentMap: Record<string, number> = {};
-                current.forEach((item: any) => {
-                    const name = String(item?.name || "").trim();
-                    const score = Number(item?.score);
-                    if (name && Number.isFinite(score)) currentMap[name] = score;
-                });
-
-                const nextScores: Record<string, number> = {};
-                topics.forEach((t: any) => {
-                    const name = String(t?.name || "").trim();
-                    if (!name) return;
-                    nextScores[name] = currentMap[name] ?? 3;
-                });
-
-                setAdvisorEvalTopics(topics);
-                setAdvisorEvalScores(nextScores);
-                setAdvisorEvalFeedback(String(data?.feedback || ""));
-                setAdvisorEvalSubmittedAt(data?.submitted_at || null);
-            } catch (e: any) {
-                setAdvisorEvalTopics([]);
-                setAdvisorEvalScores({});
-                setAdvisorEvalFeedback("");
-                setAdvisorEvalSubmittedAt(null);
-                setAdvisorEvalMessage(e?.message || "โหลดแบบประเมินไม่สำเร็จ");
-            } finally {
-                setAdvisorEvalLoading(false);
-            }
-        };
-
-        loadAdvisorEvaluationTemplate();
-    }, [studentId, session?.id, advisorEvalYear, advisorEvalSemester]);
 
     useEffect(() => {
         if (!studentId || Number.isNaN(studentId)) {
@@ -276,56 +209,6 @@ export function StudentProfileFeature({ session }: { session: any }) {
         );
     }
 
-    const advisorYearOptions = Array.from({ length: 5 }, (_, i) => getCurrentAcademicYearBE() - i);
-
-    const handleAdvisorEvaluationSave = async () => {
-        if (!studentId || !session?.id) return;
-        if (advisorEvalTopics.length === 0) {
-            setAdvisorEvalMessage("ไม่พบหัวข้อประเมิน");
-            return;
-        }
-
-        const data = advisorEvalTopics
-            .map((t) => {
-                const name = String(t?.name || "").trim();
-                const score = Number(advisorEvalScores[name]);
-                return { name, score };
-            })
-            .filter((item) => item.name && Number.isFinite(item.score))
-            .map((item) => ({ ...item, score: Math.round(item.score) }));
-
-        if (data.length === 0) {
-            setAdvisorEvalMessage("กรุณากรอกคะแนนประเมินอย่างน้อย 1 รายการ");
-            return;
-        }
-
-        setAdvisorEvalSaving(true);
-        setAdvisorEvalMessage("");
-        try {
-            await TeacherApiService.saveStudentAdvisorEvaluation({
-                teacher_id: session.id,
-                student_id: studentId,
-                year: advisorEvalYear,
-                semester: advisorEvalSemester,
-                data,
-                feedback: advisorEvalFeedback,
-            });
-            setAdvisorEvalMessage("บันทึกผลประเมินแล้ว (นักเรียนจะเห็นในหน้าผลประเมินการเรียน)");
-
-            const refreshed = await TeacherApiService.getStudentAdvisorEvaluationTemplate(
-                studentId,
-                session.id,
-                advisorEvalYear,
-                advisorEvalSemester
-            );
-            setAdvisorEvalSubmittedAt(refreshed?.submitted_at || null);
-        } catch (e: any) {
-            setAdvisorEvalMessage(e?.message || "บันทึกผลประเมินไม่สำเร็จ");
-        } finally {
-            setAdvisorEvalSaving(false);
-        }
-    };
-
     const personalFields = [
         { label: "รหัสนักเรียน", value: profile.student_code },
         { label: "คำนำหน้า", value: profile.prefix },
@@ -344,78 +227,14 @@ export function StudentProfileFeature({ session }: { session: any }) {
 
     const extra = profile?.extended_profile || null;
     const alerts: string[] = Array.isArray(extra?.alerts) ? extra.alerts : [];
-    const completion = extra?.profile_completion || null;
     const advisory = extra?.advisory || null;
     const attendance = extra?.attendance || null;
     const grades = extra?.grades || null;
-    const scoreOverview = extra?.scores || null;
-    const registrations = extra?.registrations || null;
     const conduct = extra?.conduct || null;
     const health = extra?.health || null;
     const fitness = extra?.fitness || null;
     const evaluations = extra?.evaluations || null;
     const timeline = Array.isArray(extra?.timeline) ? extra.timeline : [];
-    const hasLearningRegistrations = Array.isArray(registrations?.latest_term_registrations) && registrations.latest_term_registrations.length > 0;
-    const hasLearningGrades = Array.isArray(grades?.recent_grades) && grades.recent_grades.length > 0;
-    const allLearningScoreItems = Array.isArray(scoreOverview?.recent_items) ? scoreOverview.recent_items : [];
-
-    const learningYearSet = new Set<number>();
-    if (hasLearningRegistrations) {
-        const y = toIntOrNull(registrations?.latest_term?.year);
-        if (y) learningYearSet.add(y);
-    }
-    (grades?.recent_grades || []).forEach((g: any) => {
-        const y = toIntOrNull(g?.year);
-        if (y) learningYearSet.add(y);
-    });
-    allLearningScoreItems.forEach((item: any) => {
-        const y = toIntOrNull(item?.year);
-        if (y) learningYearSet.add(y);
-    });
-    if (learningYearSet.size === 0) learningYearSet.add(getCurrentAcademicYearBE());
-    const learningYearOptions = Array.from(learningYearSet).sort((a, b) => b - a);
-    const selectedLearningYear = learningYearOptions.includes(learningYear) ? learningYear : learningYearOptions[0];
-
-    const learningSemesterSet = new Set<number>();
-    if (hasLearningRegistrations) {
-        const regYear = toIntOrNull(registrations?.latest_term?.year);
-        const regSemester = toIntOrNull(registrations?.latest_term?.semester);
-        if ((regYear == null || regYear === selectedLearningYear) && regSemester) learningSemesterSet.add(regSemester);
-    }
-    (grades?.recent_grades || []).forEach((g: any) => {
-        const y = toIntOrNull(g?.year);
-        const s = toIntOrNull(g?.semester);
-        if ((y == null || y === selectedLearningYear) && s) learningSemesterSet.add(s);
-    });
-    allLearningScoreItems.forEach((item: any) => {
-        const y = toIntOrNull(item?.year);
-        const s = toIntOrNull(item?.semester);
-        if ((y == null || y === selectedLearningYear) && s) learningSemesterSet.add(s);
-    });
-    if (learningSemesterSet.size === 0) {
-        learningSemesterSet.add(1);
-        learningSemesterSet.add(2);
-    }
-    const learningSemesterOptions = Array.from(learningSemesterSet).sort((a, b) => a - b);
-    const selectedLearningSemester = learningSemesterOptions.includes(learningSemester) ? learningSemester : learningSemesterOptions[0];
-
-    const matchesLearningTerm = (yearValue: any, semesterValue: any) => {
-        const y = toIntOrNull(yearValue);
-        const s = toIntOrNull(semesterValue);
-        if (y != null && y !== selectedLearningYear) return false;
-        if (s != null && s !== selectedLearningSemester) return false;
-        return true;
-    };
-
-    const filteredLearningRegistrations = hasLearningRegistrations && matchesLearningTerm(registrations?.latest_term?.year, registrations?.latest_term?.semester)
-        ? (registrations.latest_term_registrations || [])
-        : [];
-    const filteredLearningGrades = (grades?.recent_grades || []).filter((g: any) => matchesLearningTerm(g?.year, g?.semester));
-    const filteredLearningScoreItems = allLearningScoreItems.filter((item: any) => matchesLearningTerm(item?.year, item?.semester));
-    const hasFilteredLearningRegistrations = filteredLearningRegistrations.length > 0;
-    const hasFilteredLearningGrades = filteredLearningGrades.length > 0;
-    const hasFilteredLearningScores = filteredLearningScoreItems.length > 0;
-
     const healthFields = [
         { label: "น้ำหนัก (กก.)", value: health?.latest?.weight },
         { label: "ส่วนสูง (ซม.)", value: health?.latest?.height },
@@ -442,7 +261,7 @@ export function StudentProfileFeature({ session }: { session: any }) {
                         <h1 className="text-3xl font-bold">{`${profile.prefix || ""}${profile.first_name || ""} ${profile.last_name || ""}`.trim()}</h1>
                         <p className="text-pink-100 mt-2">ข้อมูลส่วนตัวนักเรียน • {profile.student_code}</p>
                         <div className="mt-3 flex flex-wrap gap-2 text-sm">
-                            <span className="rounded-full bg-white/15 px-3 py-1">{formatClassRoomDisplay(profile.class_level, profile.room)}</span>
+                            <span className="rounded-full bg-white/15 px-3 py-1">{formatClassRoomDisplay(profile.class_level)}</span>
                             {advisory?.current && (
                                 <span className="rounded-full bg-white/15 px-3 py-1">
                                     ที่ปรึกษา ปี {advisory.current.year || "-"} ภาค {advisory.current.semester || "-"}

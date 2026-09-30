@@ -540,8 +540,6 @@ export const TeacherGradeCutService = {
         }
         const scales = normalizeGradeScales(rawScales);
 
-        console.log(`[GradeCut] Processing ${summary.length} students for assignment ${teaching_assignment_id} (P/F: ${isPF})`);
-
         let savedCount = 0;
         for (const s of summary) {
             if (!s) continue;
@@ -606,7 +604,6 @@ export const TeacherGradeCutService = {
             }
         }
 
-        console.log(`[GradeCut] Successfully saved ${savedCount}/${summary.length} grades`);
         return { success: true, count: savedCount, total: summary.length };
     }
 };

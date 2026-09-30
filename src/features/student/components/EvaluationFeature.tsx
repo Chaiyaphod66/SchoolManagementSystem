@@ -1,32 +1,40 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { StudentApiService } from "@/services/student-api.service";
 import { useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { getAcademicSemesterDefault, getCurrentAcademicYearBE } from "@/features/student/academic-term";
-import { useMemo } from "react";
 
 interface EvaluationFeatureProps {
     session: any;
 }
 
-export function EvaluationFeature({ session }: EvaluationFeatureProps) {
+export function EvaluationFeature({}: EvaluationFeatureProps) {
 
     const academicYearsQuery = useQuery({
         queryKey: ["student", "lookups", "academic-years"],
         queryFn: () => StudentApiService.getAcademicYears(),
     });
 
-    const yearOptionsData = (academicYearsQuery.data as any[]) || [];
-    const yearOptions = yearOptionsData.map((y: any) => Number(y.year_name));
+    const yearOptionsData = useMemo(
+        () => (academicYearsQuery.data as any[]) || [],
+        [academicYearsQuery.data],
+    );
+    const yearOptions = useMemo(
+        () => yearOptionsData.map((y: any) => Number(y.year_name)),
+        [yearOptionsData],
+    );
 
     // Select state
     const [year, setYear] = useState<number>(getCurrentAcademicYearBE());
     const [semester, setSemester] = useState<number>(getAcademicSemesterDefault());
 
     const selectedYearLookup = yearOptionsData.find((y: any) => Number(y.year_name) === Number(year));
-    const semesterOptions = selectedYearLookup?.semesters || [];
+    const semesterOptions = useMemo(
+        () => selectedYearLookup?.semesters || [],
+        [selectedYearLookup],
+    );
 
     // Sync year state if data is loaded
     useEffect(() => {
@@ -78,7 +86,7 @@ export function EvaluationFeature({ session }: EvaluationFeatureProps) {
         return Array.from(semesters).sort((a, b) => a - b);
     }, [history, year, semesterOptions]);
 
-    const fetchTopics = async () => {
+    const fetchTopics = useCallback(async () => {
         setIsLoadingTopics(true);
         try {
             const result = await StudentApiService.getEvaluationTopics(year, semester, 'sdq');
@@ -97,9 +105,9 @@ export function EvaluationFeature({ session }: EvaluationFeatureProps) {
         } finally {
             setIsLoadingTopics(false);
         }
-    };
+    }, [semester, year]);
 
-    const initData = async () => {
+    const initData = useCallback(async () => {
         setIsLoadingInit(true);
         try {
             if (history.length === 0) {
@@ -132,11 +140,11 @@ export function EvaluationFeature({ session }: EvaluationFeatureProps) {
         } finally {
             setIsLoadingInit(false);
         }
-    };
+    }, [fetchTopics, history, semester, year]);
 
     useEffect(() => {
         initData();
-    }, [year, semester]);
+    }, [initData]);
 
     const handleScoreChange = (topicName: string, value: number | string) => {
         setScores(prev => ({ ...prev, [topicName]: value }));

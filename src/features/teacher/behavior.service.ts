@@ -14,10 +14,15 @@ export const TeacherBehaviorService = {
         });
     },
 
-    async getClassrooms(level_id?: number | string) {
+    async getClassrooms(level_id?: number | string, teacher_id?: number) {
         const id = level_id ? Number(level_id) : undefined;
         return prisma.classrooms.findMany({
-            where: id && !isNaN(id) ? { grade_level_id: id } : undefined,
+            where: {
+                ...(id && !isNaN(id) ? { grade_level_id: id } : {}),
+                ...(teacher_id ? {
+                    classroom_assignments: { some: { teacher_id } },
+                } : {}),
+            },
             include: { levels: { select: { grade_level_name: true } } },
             orderBy: { room_name: 'asc' }
         });
@@ -49,14 +54,35 @@ export const TeacherBehaviorService = {
         level_id?: number;
         classroom_id?: number;
     }) {
-        const { teacher_id, year, semester, level_id, classroom_id } = params;
+        const { teacher_id, year, level_id, classroom_id } = params;
         
         // If filtering by room, we look for students in that room.
         // If no filters, we fallback to advisory students like before.
         
         let targetClassroomIds: number[] = [];
         
-        if (classroom_id) {
+        let academicYearId: number | null = null;
+        if (year && !isNaN(year)) {
+            const ay = await prisma.academic_years.findUnique({
+                where: { year_name: String(year) }
+            });
+            academicYearId = ay?.id ?? null;
+            if (!academicYearId) return [];
+        }
+
+        if (teacher_id) {
+            // A teacher may only query classrooms assigned to them in the selected year.
+            const advisors = await prisma.classroom_assignments.findMany({
+                where: {
+                    teacher_id,
+                    ...(academicYearId ? { academic_year_id: academicYearId } : {}),
+                    ...(classroom_id ? { classroom_id } : {}),
+                    ...(level_id ? { classrooms: { grade_level_id: level_id } } : {}),
+                },
+                select: { classroom_id: true }
+            });
+            targetClassroomIds = advisors.map(a => a.classroom_id);
+        } else if (classroom_id) {
             targetClassroomIds = [classroom_id];
         } else if (level_id) {
             const rooms = await prisma.classrooms.findMany({
@@ -64,13 +90,6 @@ export const TeacherBehaviorService = {
                 select: { id: true }
             });
             targetClassroomIds = rooms.map(r => r.id);
-        } else if (teacher_id) {
-            // Default: All rooms where this teacher is an advisor
-            const advisors = await prisma.classroom_assignments.findMany({
-                where: { teacher_id },
-                select: { classroom_id: true }
-            });
-            targetClassroomIds = advisors.map(a => a.classroom_id);
         } else {
             // No filters and no teacher_id (Global view for Director, get all classrooms)
             const allRooms = await prisma.classrooms.findMany({ select: { id: true } });
@@ -80,15 +99,7 @@ export const TeacherBehaviorService = {
         const validClassroomIds = targetClassroomIds.filter(id => !isNaN(id));
         if (validClassroomIds.length === 0) return [];
 
-        let academicYearId: number | null = null;
-        if (year && !isNaN(year)) {
-            const ay = await prisma.academic_years.findUnique({
-                where: { year_name: String(year) }
-            });
-            academicYearId = ay?.id ?? null;
-        }
-
-        let students = await (prisma.students as any).findMany({
+        const students = await (prisma.students as any).findMany({
             where: {
                 classroom_students: {
                     some: {
@@ -101,7 +112,8 @@ export const TeacherBehaviorService = {
                 name_prefixes: true,
                 classroom_students: {
                     where: {
-                        classroom_id: { in: validClassroomIds }
+                        classroom_id: { in: validClassroomIds },
+                        ...(academicYearId ? { academic_year_id: academicYearId } : {}),
                     },
                     include: { classrooms: { include: { levels: true } } },
                     orderBy: { academic_year_id: 'desc' }
@@ -120,41 +132,6 @@ export const TeacherBehaviorService = {
             },
             orderBy: { student_code: 'asc' }
         });
-
-        if (students.length === 0 && year && !isNaN(year)) {
-            console.log(`Fallback: No students for year ${year}, searching all years for these rooms`);
-            students = await (prisma.students as any).findMany({
-                where: {
-                    classroom_students: {
-                        some: {
-                            classroom_id: { in: validClassroomIds }
-                        }
-                    }
-                },
-                include: {
-                    name_prefixes: true,
-                    classroom_students: {
-                        where: {
-                            classroom_id: { in: validClassroomIds }
-                        },
-                        include: { classrooms: { include: { levels: true } } },
-                        orderBy: { academic_year_id: 'desc' }
-                    },
-                    genders: true,
-                    student_statuses: true,
-                    behavior_records: {
-                        orderBy: { created_at: 'desc' },
-                        select: { 
-                            points_awarded: true,
-                            status: true,
-                            reject_reason: true,
-                            created_at: true 
-                        }
-                    }
-                },
-                orderBy: { student_code: 'asc' }
-            });
-        }
 
         const mapped = (students as any[]).map((s: any) => {
             // Find the most relevant classroom record for this query
@@ -306,7 +283,7 @@ export const TeacherBehaviorService = {
         });
     },
 
-    async getStudentBehaviorHistory(studentId: number, userId: number, role: string) {
+    async getStudentBehaviorHistory(studentId: number) {
         const records = await prisma.behavior_records.findMany({
             where: {
                 student_id: studentId

@@ -411,8 +411,6 @@ export function AdvisorEvaluationFeature({ session }: AdvisorEvaluationFeaturePr
         load();
     }, [activeTab, teacher_id, year, semester]);
 
-    const isLoading = activeTab === "subject" ? isSubjectLoading : isAdvisorLoading;
-
     return (
         <div className="space-y-6">
             {/* Header */}

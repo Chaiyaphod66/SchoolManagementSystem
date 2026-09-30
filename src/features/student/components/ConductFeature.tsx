@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { StudentApiService } from "@/services/student-api.service";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/Skeleton";
@@ -9,8 +8,7 @@ interface ConductFeatureProps {
     session: any;
 }
 
-export function ConductFeature({ session }: ConductFeatureProps) {
-    const student = session;
+export function ConductFeature({}: ConductFeatureProps) {
 
     // Data state
     // Queries

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { StudentApiService } from '@/services/student-api.service';
 
@@ -139,9 +140,11 @@ export function DashboardFeature({ session }: { session: StudentDashboardSession
                         <div className="relative shrink-0">
                             <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-white/20 backdrop-blur-md border-2 border-white/30 overflow-hidden shadow-inner flex items-center justify-center">
                                 {profile.image_url ? (
-                                    <img
+                                    <Image
                                         src={profile.image_url}
                                         alt={profile.name || 'Student'}
+                                        width={96}
+                                        height={96}
                                         className="w-full h-full object-cover"
                                     />
                                 ) : (

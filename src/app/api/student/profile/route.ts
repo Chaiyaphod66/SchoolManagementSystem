@@ -18,7 +18,7 @@ const updateProfileSchema = z.object({
     dormitory: z.string().optional(),
 });
 
-export async function GET(request: Request) {
+export async function GET() {
     try {
         const session = await getSession();
         const sessionResult = parseStudentIdFromSession(session);

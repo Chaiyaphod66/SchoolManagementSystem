@@ -128,7 +128,7 @@ export const TeacherFitnessService = {
             const latestWeight = sortedHealth.find(r => r.weight !== null && r.weight !== undefined)?.weight;
             const latestHeight = sortedHealth.find(r => r.height !== null && r.height !== undefined)?.height;
 
-            let tests = studentFitness.map(r => ({
+            const tests = studentFitness.map(r => ({
                 test_name: r.test_name,
                 test_result: r.test_result,
                 status: r.grade,
@@ -158,7 +158,7 @@ export const TeacherFitnessService = {
             };
         });
 
-        let recordsMap: Record<number, { weight?: number, height?: number, teeth_brushing?: string | null, milk_drinking?: string | null, fitness: Record<string, any> }> = {};
+        const recordsMap: Record<number, { weight?: number, height?: number, teeth_brushing?: string | null, milk_drinking?: string | null, fitness: Record<string, any> }> = {};
         
         let semesterId: number | null = null;
         if (year && semester) {
@@ -429,7 +429,7 @@ export const TeacherFitnessService = {
         });
     },
     async saveFitnessTest(data: any) {
-        const { record_type, student_id, teacher_id, test_name, result_value, standard_value, status, year, semester, criteria_id, weight, height, teeth_brushing, milk_drinking } = data;
+        const { record_type, student_id, teacher_id, test_name, result_value, status, year, semester, criteria_id, weight, height, teeth_brushing, milk_drinking } = data;
 
         const sId = Number(student_id);
         const tId = teacher_id ? Number(teacher_id) : null;

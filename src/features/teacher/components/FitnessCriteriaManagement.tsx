@@ -172,7 +172,7 @@ export const FitnessCriteriaManagement: React.FC<Props> = ({ isOpen, onClose, cu
             await Promise.all(idsToDelete.map(id => TeacherApiService.deleteFitnessCriteria(id!)));
             fetchCriteria();
             onRefresh?.();
-        } catch (error) {
+        } catch {
             alert('ลบไม่สำเร็จ');
         }
     };
@@ -208,7 +208,7 @@ export const FitnessCriteriaManagement: React.FC<Props> = ({ isOpen, onClose, cu
             resetForm();
             fetchCriteria();
             onRefresh?.();
-        } catch (error) {
+        } catch {
             alert('บันทึกไม่สำเร็จ');
         }
     };

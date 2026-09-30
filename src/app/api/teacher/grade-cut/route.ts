@@ -1,6 +1,10 @@
 import { TeacherGradeCutService } from '@/features/teacher/grade-cut.service';
 import { successResponse, errorResponse } from '@/lib/api-response';
-import { getAuthenticatedTeacherId, teacherOwnsAssignment } from '@/app/api/teacher/_utils';
+import {
+    getAuthenticatedTeacherId,
+    teacherCanAccessAssignmentStudent,
+    teacherOwnsAssignment,
+} from '@/app/api/teacher/_utils';
 
 export async function GET(request: Request) {
     try {
@@ -56,6 +60,9 @@ export async function POST(request: Request) {
         if (body.action === 'update_manual_grade') {
             const student_id = Number(body.student_id);
             if (!student_id) return errorResponse('student_id required', 400);
+            if (!await teacherCanAccessAssignmentStudent(teacherId, section_id, student_id)) {
+                return errorResponse('Student is not in this classroom for the assignment year', 403);
+            }
             const data = await TeacherGradeCutService.updateManualGrade(
                 section_id,
                 student_id,

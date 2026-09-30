@@ -132,13 +132,6 @@ export function AttendanceFeature({ session }: { session: any }) {
     }, [selectedClassroomId, classrooms]);
 
     const totalSlots = students.length * weekDays.length;
-    const presentCount = useMemo(() => {
-        return weekDays.reduce((sum, day) => {
-            return sum + students.filter((student) => attendanceMap[getAttendanceKey(day.date, student.student_id)]?.status === "present").length;
-        }, 0);
-    }, [attendanceMap, students, weekDays]);
-
-    const absentCount = Math.max(0, totalSlots - presentCount);
     const isComplete = totalSlots > 0;
 
     const loadAttendance = useCallback(async () => {

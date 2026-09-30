@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { TeacherApiService } from "@/services/teacher-api.service";
 
@@ -129,9 +129,6 @@ export function GradeCutFeature({ session }: { session: any }) {
     const [savingThresholds, setSavingThresholds] = useState(false);
     const [calculating, setCalculating] = useState(false);
     const [studentSearch, setStudentSearch] = useState("");
-    const [groupOptions, setGroupOptions] = useState<any[]>([]);
-    const [selectingGroup, setSelectingGroup] = useState(false);
-
     const [selectedSubjectKey, setSelectedSubjectKey] = useState("");
     const [selectedRoomKey, setSelectedRoomKey] = useState("");
     const [selectedYearKey, setSelectedYearKey] = useState("");

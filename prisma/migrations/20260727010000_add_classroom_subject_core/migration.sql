@@ -6,9 +6,8 @@ ON "classroom_students"("student_id", "academic_year_id");
 ALTER TABLE "classroom_assignments"
 RENAME CONSTRAINT "teaching_assignments_pkey" TO "classroom_assignments_pkey";
 
--- The legacy schedule table is empty and stores duplicated subject/classroom/term
--- columns. Replace it with schedules belonging to a classroom subject.
-DROP TABLE "class_schedule";
+-- Keep the legacy schedule table until its rows have been mapped to the new
+-- teaching-assignment based schedule near the end of this migration.
 
 CREATE TABLE "teaching_assignments" (
     "id" SERIAL NOT NULL,
@@ -123,3 +122,32 @@ JOIN "classroom_assignments" AS advisor
  AND advisor."academic_year_id" = semester."academic_year_id"
 WHERE subject."level_id" IS NOT NULL
 ON CONFLICT ("subject_id", "classroom_id", "semester_id") DO NOTHING;
+
+-- Preserve legacy timetable rows by resolving each one to the matching
+-- subject/classroom/semester assignment. Rows without a matching assignment
+-- are left in place and abort the drop so that they cannot be lost silently.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM "class_schedule" legacy
+        LEFT JOIN "teaching_assignments" assignment
+          ON assignment."subject_id" = legacy."subject_id"
+         AND assignment."classroom_id" = legacy."classroom_id"
+         AND assignment."semester_id" = legacy."semester_id"
+        WHERE assignment."id" IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Legacy class_schedule contains rows that cannot be mapped to teaching_assignments';
+    END IF;
+END $$;
+
+INSERT INTO "class_schedules" ("teaching_assignment_id", "day_id", "period_id")
+SELECT assignment."id", legacy."day_of_week_id", legacy."period_id"
+FROM "class_schedule" legacy
+JOIN "teaching_assignments" assignment
+  ON assignment."subject_id" = legacy."subject_id"
+ AND assignment."classroom_id" = legacy."classroom_id"
+ AND assignment."semester_id" = legacy."semester_id"
+ON CONFLICT ("teaching_assignment_id", "day_id", "period_id") DO NOTHING;
+
+DROP TABLE "class_schedule";

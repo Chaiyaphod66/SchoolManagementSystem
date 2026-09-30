@@ -3,9 +3,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { StudentApiService } from "@/services/student-api.service";
 import { useQuery } from "@tanstack/react-query";
-import { Skeleton } from "@/components/Skeleton";
 import { PrintButton } from "@/components/PrintButton";
-import { getAcademicSemesterDefault, getAcademicYearOptionsForStudent, getCurrentAcademicYearBE } from "@/features/student/academic-term";
+import { getAcademicSemesterDefault, getCurrentAcademicYearBE } from "@/features/student/academic-term";
 
 const GRADE_POINT_MAP: Record<string, number> = {
     A: 4,
@@ -76,8 +75,14 @@ export function GradesFeature({ session }: GradesFeatureProps) {
         queryFn: () => StudentApiService.getAcademicYears(),
     });
 
-    const yearOptionsData = (academicYearsQuery.data as any[]) || [];
-    const yearOptions = yearOptionsData.map((y: any) => y.year_name);
+    const yearOptionsData = useMemo(
+        () => (academicYearsQuery.data as any[]) || [],
+        [academicYearsQuery.data],
+    );
+    const yearOptions = useMemo(
+        () => yearOptionsData.map((y: any) => y.year_name),
+        [yearOptionsData],
+    );
 
     const [year, setYear] = useState(String(getCurrentAcademicYearBE()));
     const [semester, setSemester] = useState(String(getAcademicSemesterDefault()));
@@ -85,7 +90,10 @@ export function GradesFeature({ session }: GradesFeatureProps) {
     const [didAutoFallback, setDidAutoFallback] = useState(false);
 
     const selectedYearLookup = yearOptionsData.find((y: any) => String(y.year_name) === String(year));
-    const semesterOptions = selectedYearLookup?.semesters || [];
+    const semesterOptions = useMemo(
+        () => selectedYearLookup?.semesters || [],
+        [selectedYearLookup],
+    );
 
     // Sync year state if data is loaded
     useEffect(() => {
@@ -115,43 +123,13 @@ export function GradesFeature({ session }: GradesFeatureProps) {
         queryFn: () => StudentApiService.getAdvisor(),
     });
 
-    const isLoading = termGradesQuery.isLoading || allGradesQuery.isLoading || advisorLatestQuery.isLoading;
-    const fetchError = (termGradesQuery.error as any)?.message || null;
-    const grades = termGradesQuery.data || [];
-    const allGrades = allGradesQuery.data || [];
+    const grades = useMemo(() => termGradesQuery.data || [], [termGradesQuery.data]);
+    const allGrades = useMemo(() => allGradesQuery.data || [], [allGradesQuery.data]);
     const latestAdviceData = advisorLatestQuery.data as any;
-    const latestAdvisors = latestAdviceData?.advisors || (latestAdviceData?.advisor ? [latestAdviceData.advisor] : []);
-
-    // Dynamic Options from DB
-    const dynamicYearOptions = useMemo(() => {
-        const years = new Set<string>();
-        if (Array.isArray(allGrades)) {
-            allGrades.forEach(g => {
-                if (g.year) years.add(String(g.year));
-            });
-        }
-        // Fallback to yearOptions if no data yet
-        if (years.size === 0) return yearOptions.map(String);
-        return Array.from(years).sort((a, b) => Number(b) - Number(a));
-    }, [allGrades, yearOptions]);
-
-    const dynamicSemesterOptions = useMemo(() => {
-        const semesters = new Set<number>();
-        if (Array.isArray(allGrades)) {
-            allGrades.forEach(g => {
-                if (String(g.year) === year && g.semester) {
-                    semesters.add(Number(g.semester));
-                }
-            });
-        }
-        // Fallback to lookup table if no grade data yet
-        if (semesters.size === 0) {
-            return semesterOptions.length > 0
-                ? semesterOptions.map((s: any) => s.semester_number)
-                : [1, 2];
-        }
-        return Array.from(semesters).sort((a, b) => a - b);
-    }, [allGrades, year, semesterOptions]);
+    const latestAdvisors = useMemo(
+        () => latestAdviceData?.advisors || (latestAdviceData?.advisor ? [latestAdviceData.advisor] : []),
+        [latestAdviceData],
+    );
 
     // Derived State (Calculations)
     const { termCredit, gpa } = useMemo(() => {
@@ -246,13 +224,6 @@ export function GradesFeature({ session }: GradesFeatureProps) {
         yearNum,
         semesterNum
     ]);
-
-    const formatThaiDate = (dateStr: string) => {
-        if (!dateStr) return "-";
-        return new Date(dateStr).toLocaleDateString("th-TH", {
-            year: "numeric", month: "long", day: "numeric"
-        });
-    };
 
     const getLevelRoomDisplay = (p: any) => {
         const classLevel = String(p?.class_level || "").trim();

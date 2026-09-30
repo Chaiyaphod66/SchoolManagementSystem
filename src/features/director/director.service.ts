@@ -444,7 +444,9 @@ export const DirectorService = {
     },
 
     async createTeacher(data: any) {
-        const hash = await bcrypt.hash(data.password || '1234', 10);
+        const password = String(data.password || '');
+        if (password.length < 8) throw new Error('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร');
+        const hash = await bcrypt.hash(password, 10);
         const teacherRole = await prisma.roles.findUnique({ where: { role_name: 'TEACHER' } });
         if (!teacherRole) throw new Error('ไม่พบบทบาท TEACHER');
 
@@ -580,7 +582,9 @@ export const DirectorService = {
     },
 
     async createStudent(data: any) {
-        const hash = await bcrypt.hash(data.password || '1234', 10);
+        const password = String(data.password || '');
+        if (password.length < 8) throw new Error('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร');
+        const hash = await bcrypt.hash(password, 10);
         const studentRole = await prisma.roles.findUnique({ where: { role_name: 'STUDENT' } });
         if (!studentRole) throw new Error('ไม่พบบทบาท STUDENT');
 
@@ -1754,7 +1758,7 @@ export const DirectorService = {
         if (!current) throw new Error('Expense record not found');
 
         let sets = "";
-        let p: any[] = [];
+        const p: any[] = [];
         let idx = 1;
         if (data.project_id !== undefined) { sets += `project_id = $${idx++}, `; p.push(Number(data.project_id)); }
         if (data.category_id !== undefined) { sets += `expense_category_id = $${idx++}, `; p.push(data.category_id ? Number(data.category_id) : null); }

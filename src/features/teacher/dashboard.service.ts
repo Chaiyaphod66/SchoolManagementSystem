@@ -2,7 +2,6 @@ import { prisma } from '@/lib/prisma';
 
 export const TeacherDashboardService = {
     async getSummary(id: number) {
-        console.log(`[TeacherDashboardService] getSummary for id: ${id}`);
         // Resolve teacher_id from user_id if necessary
         let teacher_id = id;
         const teacherRecord = await prisma.teachers.findFirst({
@@ -11,7 +10,6 @@ export const TeacherDashboardService = {
         
         if (teacherRecord) {
             teacher_id = teacherRecord.id;
-            console.log(`[TeacherDashboardService] Resolved teacher_id: ${teacher_id}`);
         } else {
             console.warn(`[TeacherDashboardService] No teacher record found for id: ${id}`);
         }

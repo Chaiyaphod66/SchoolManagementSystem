@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { TeacherApiService } from "@/services/teacher-api.service";
 
 export function ExamCalendarFeature({ session }: { session: any }) {
@@ -7,7 +7,7 @@ export function ExamCalendarFeature({ session }: { session: any }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
-    const load = async () => {
+    const load = useCallback(async () => {
         setLoading(true);
         setError("");
         try {
@@ -19,11 +19,11 @@ export function ExamCalendarFeature({ session }: { session: any }) {
         } finally {
             setLoading(false);
         }
-    };
+    }, [session.id]);
 
     useEffect(() => {
         load();
-    }, [session.id]);
+    }, [load]);
 
     const isFallbackAll = exams.length > 0 && exams.some((e) => e.is_fallback_all);
 

@@ -43,6 +43,27 @@ async function resolveAttendanceStatusId(status: string) {
     return created.id;
 }
 
+async function resolveAcademicYearId(date: string) {
+    const attendanceDate = new Date(`${date}T00:00:00.000Z`);
+    const exactYear = await prisma.academic_years.findFirst({
+        where: {
+            start_date: { lte: attendanceDate },
+            end_date: { gte: attendanceDate },
+        },
+        orderBy: { year_name: 'desc' },
+        select: { id: true },
+    });
+    if (exactYear) return exactYear.id;
+
+    const activeYear = await prisma.academic_years.findFirst({
+        where: { is_active: true },
+        orderBy: { year_name: 'desc' },
+        select: { id: true },
+    });
+    if (!activeYear) throw new Error('Academic year not found for attendance date');
+    return activeYear.id;
+}
+
 export const TeacherAttendanceService = {
     async getAdvisorClassrooms(teacher_id: number) {
         const advisors = await prisma.classroom_assignments.findMany({
@@ -75,8 +96,9 @@ export const TeacherAttendanceService = {
         });
         if (!teacher) throw new Error('Teacher not found');
 
+        const academicYearId = await resolveAcademicYearId(date);
         const authorized = await prisma.classroom_assignments.findFirst({
-            where: { teacher_id: teacher.id, classroom_id },
+            where: { teacher_id: teacher.id, classroom_id, academic_year_id: academicYearId },
             select: { id: true, academic_year_id: true },
         });
         if (!authorized) throw new Error('Classroom is not assigned to this teacher');
@@ -119,7 +141,8 @@ export const TeacherAttendanceService = {
     async saveAttendance(
         classroom_id: number | UiAttendanceRecordInput[],
         date?: string,
-        records?: AttendanceRecordInput[]
+        records?: AttendanceRecordInput[],
+        teacher_id?: number,
     ): Promise<{ success: boolean; count?: number }> {
         if (Array.isArray(classroom_id)) {
             const uiRecords = classroom_id;
@@ -146,7 +169,7 @@ export const TeacherAttendanceService = {
             });
 
             for (const group of grouped.values()) {
-                await this.saveAttendanceByStudent(group.classroom_id, group.date, group.records);
+                await this.saveAttendanceByStudent(group.classroom_id, group.date, group.records, teacher_id);
             }
 
             return { success: true, count: uiRecords.length };
@@ -158,17 +181,31 @@ export const TeacherAttendanceService = {
         assertEditableAttendanceDate(date);
         const normalized = Array.isArray(records) ? records : [];
 
-        return this.saveAttendanceByStudent(taId, date, normalized);
+        return this.saveAttendanceByStudent(taId, date, normalized, teacher_id);
     },
 
     async saveAttendanceByStudent(
         classroom_id: number,
         date: string,
-        records: AttendanceRecordInput[]
+        records: AttendanceRecordInput[],
+        teacher_id?: number,
     ) {
+        const academicYearId = await resolveAcademicYearId(date);
+        if (teacher_id) {
+            const advisor = await prisma.classroom_assignments.findFirst({
+                where: {
+                    teacher_id,
+                    classroom_id,
+                    academic_year_id: academicYearId,
+                },
+                select: { id: true },
+            });
+            if (!advisor) throw new Error('Forbidden classroom for attendance date');
+        }
+
         const classroomStudentIds = new Set(
             (await prisma.classroom_students.findMany({
-                where: { classroom_id },
+                where: { classroom_id, academic_year_id: academicYearId },
                 select: { student_id: true },
             })).map((row) => row.student_id)
         );

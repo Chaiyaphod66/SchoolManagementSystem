@@ -28,7 +28,6 @@ export const LearningResultsService = {
         const semester_id = await resolveSemesterId(year, semester);
 
         // 1. Find classroom and advisors for this student in the selected year
-        console.log(`[getAdvisorEvaluation] student_id=${student_id}, year=${year}, semester=${semester}`);
         const academicYearId = year ? await resolveAcademicYearId(Number(year)) : null;
 
         let classroomStudent = await prisma.classroom_students.findFirst({
@@ -41,15 +40,12 @@ export const LearningResultsService = {
 
         // Fallback: if no record for this specific year, try to get the most recent one
         if (!classroomStudent) {
-            console.log(`[getAdvisorEvaluation] No classroom found for year ${year}, attempting fallback...`);
             classroomStudent = await prisma.classroom_students.findFirst({
                 where: { student_id: Number(student_id) },
                 orderBy: { academic_year_id: 'desc' },
                 select: { classroom_id: true, academic_year_id: true }
             });
         }
-        console.log(`[getAdvisorEvaluation] Final classroomStudent=${JSON.stringify(classroomStudent)}`);
-
         const advisors: any[] = [];
         if (classroomStudent?.classroom_id) {
             const advisorLinks = await prisma.classroom_assignments.findMany({
@@ -60,8 +56,6 @@ export const LearningResultsService = {
                     }
                 }
             });
-            console.log(`[getAdvisorEvaluation] found ${advisorLinks.length} advisor links`);
-
             advisorLinks.forEach(link => {
                 const t = link.teachers;
                 if (t) {
@@ -79,8 +73,6 @@ export const LearningResultsService = {
         const studentUserId = student?.user_id;
         
         const advisorUserIds = advisors.map(a => a.user_id).filter(id => id != null);
-        console.log(`[getAdvisorEvaluation] semester_id=${semester_id}, studentUserId=${studentUserId}, advisorUserIds=${JSON.stringify(advisorUserIds)}`);
-
         let query = `
             SELECT er.id, er.evaluator_user_id, er.submitted_at, ef.form_name
             FROM public.evaluation_responses er
@@ -104,8 +96,6 @@ export const LearningResultsService = {
         query += ` ORDER BY er.submitted_at DESC`;
 
         const responseRows = advisorUserIds.length > 0 ? await prisma.$queryRawUnsafe<any[]>(query) : [];
-        console.log(`[getAdvisorEvaluation] found ${responseRows.length} response rows using query: ${query}`);
-
         const evaluations: any[] = [];
 
         for (const resp of responseRows) {

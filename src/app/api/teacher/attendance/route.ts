@@ -1,6 +1,6 @@
 import { TeacherAttendanceService } from '@/features/teacher/attendance.service';
 import { successResponse, errorResponse } from '@/lib/api-response';
-import { getAuthenticatedTeacherId, teacherOwnsClassroom } from '@/app/api/teacher/_utils';
+import { getAuthenticatedTeacherId } from '@/app/api/teacher/_utils';
 
 export async function GET(request: Request) {
     try {
@@ -32,17 +32,12 @@ export async function POST(request: Request) {
         if (!teacherId) return errorResponse('Unauthorized', 401);
         const { records } = await request.json();
         if (!Array.isArray(records)) return errorResponse('records required', 400);
-        const classroomIds = Array.from(new Set(records.map((record: any) =>
-            Number(record.classroom_id || record.section_id)
-        ).filter((id: number) => Number.isInteger(id) && id > 0)));
-        for (const classroomId of classroomIds) {
-            if (!await teacherOwnsClassroom(teacherId, classroomId)) {
-                return errorResponse('Forbidden classroom', 403);
-            }
-        }
-        const data = await TeacherAttendanceService.saveAttendance(records);
+        const data = await TeacherAttendanceService.saveAttendance(records, undefined, undefined, teacherId);
         return successResponse(data);
     } catch (error: any) {
+        if (error.message?.includes('Forbidden classroom')) {
+            return errorResponse('Forbidden classroom', 403);
+        }
         return errorResponse('Failed to save attendance', 500, error.message);
     }
 }

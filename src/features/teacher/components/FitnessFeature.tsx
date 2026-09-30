@@ -228,8 +228,6 @@ export function FitnessFeature({ session }: { session: any }) {
         }
     };
 
-    const testOptions = ["วิ่ง 50 เมตร", "วิ่ง 1000 เมตร", "ลุก-นั่ง 60 วินาที", "ดันพื้น", "นั่งงอตัว", "ยืนกระโดดไกล"];
-
     const calculateStatus = (result: string, standard: string, comparison: string = '>=') => {
         const r = parseFloat(result);
         const s = parseFloat(standard);

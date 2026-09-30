@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { getSession } from '@/lib/auth';
 import SidebarNav from './SidebarNav';
 import SidebarContainer from './SidebarContainer';

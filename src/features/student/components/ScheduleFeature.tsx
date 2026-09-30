@@ -1,19 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StudentApiService } from "@/services/student-api.service";
-import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/Skeleton";
-import { getAcademicSemesterDefault, getAcademicYearOptionsForStudent, getCurrentAcademicYearBE } from "@/features/student/academic-term";
 
 interface ScheduleFeatureProps {
     session: any;
 }
 
-export function ScheduleFeature({ session }: ScheduleFeatureProps) {
-    const student = session;
+export function ScheduleFeature({}: ScheduleFeatureProps) {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -26,7 +23,10 @@ export function ScheduleFeature({ session }: ScheduleFeatureProps) {
         queryFn: () => StudentApiService.getAcademicYears(),
     });
 
-    const yearOptionsData = (academicYearsQuery.data as any[]) || [];
+    const yearOptionsData = useMemo(
+        () => (academicYearsQuery.data as any[]) || [],
+        [academicYearsQuery.data],
+    );
     const yearOptions = yearOptionsData.map((y: any) => y.year_name);
 
     // Initial year/semester setup

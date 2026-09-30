@@ -176,11 +176,7 @@ export const DirectorDashboardService = {
             }),
             prisma.employment_types.findMany(),
             getProjectsSummary(),
-            getHealthSummary(
-                studentWhere,
-                activeYear?.year_name,
-                activeYear?.semesters?.[0]?.semester_number
-            ).catch(() => ({
+            getHealthSummary(studentWhere).catch(() => ({
                 checkedCount: 0,
                 totalStudents: 0,
                 bmiNormalCount: 0,
@@ -1164,7 +1160,7 @@ async function getFinanceSummary() {
 
 // --- Helper: Projects Summary ---
 async function getProjectsSummary() {
-    const [projects, projectStats, expenseAgg, depts] = await Promise.all([
+    const [projects, projectStats, expenseAgg] = await Promise.all([
         prisma.projects.findMany({
             include: {
                 departments: { select: { department_name: true } },
@@ -1178,8 +1174,7 @@ async function getProjectsSummary() {
         }),
         prisma.project_expenses.aggregate({
             _sum: { amount: true }
-        }),
-        prisma.departments.findMany()
+        })
     ]);
 
     const total = projectStats._count.id;
@@ -1225,7 +1220,7 @@ async function getProjectsSummary() {
 }
 
 // --- Helper: Health Summary ---
-async function getHealthSummary(studentWhere: any, year?: string, semester?: number) {
+async function getHealthSummary(studentWhere: any) {
     // 1. Fetch Students in the cohort
     const students = await (prisma as any).students.findMany({
         where: studentWhere,
@@ -1341,9 +1336,6 @@ async function getHealthSummary(studentWhere: any, year?: string, semester?: num
     });
 
     // 5. Fitness Records (Aggregate in JS for robustness)
-    
-    // Convert year string (e.g. "2567") to Number if it looks like one
-    const yearNum = year ? parseInt(year) : null;
     
     // Broaden search: if no academic_year/semester filter, get all. 
     // If they are provided, we should filter by them to be accurate, 

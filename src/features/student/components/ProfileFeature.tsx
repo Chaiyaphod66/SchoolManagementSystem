@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { StudentApiService } from "@/services/student-api.service";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Skeleton } from "@/components/Skeleton";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -12,10 +10,7 @@ interface ProfileFeatureProps {
     session: any;
 }
 
-export function ProfileFeature({ session }: ProfileFeatureProps) {
-    const student = session;
-    const router = useRouter();
-
+export function ProfileFeature({}: ProfileFeatureProps) {
     const queryClient = useQueryClient();
     const [isEditing, setIsEditing] = useState(false);
 

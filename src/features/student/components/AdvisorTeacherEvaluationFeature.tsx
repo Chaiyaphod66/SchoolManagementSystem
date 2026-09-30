@@ -6,7 +6,6 @@ import toast from "react-hot-toast";
 import { StudentApiService } from "@/services/student-api.service";
 import {
     getAcademicSemesterDefault,
-    getAcademicYearOptionsForStudent,
     getCurrentAcademicYearBE,
 } from "@/features/student/academic-term";
 
@@ -39,16 +38,7 @@ type TemplateData = {
     submitted_at?: string | null;
 };
 
-function ratingLabel(value: number) {
-    if (value === 5) return "ดีมาก";
-    if (value === 4) return "ดี";
-    if (value === 3) return "ปานกลาง";
-    if (value === 2) return "พอใช้";
-    if (value === 1) return "ปรับปรุง";
-    return "-";
-}
-
-export function AdvisorTeacherEvaluationFeature({ session }: AdvisorTeacherEvaluationFeatureProps) {
+export function AdvisorTeacherEvaluationFeature({}: AdvisorTeacherEvaluationFeatureProps) {
     const academicYearsQuery = useQuery({
         queryKey: ["student", "lookups", "academic-years"],
         queryFn: () => StudentApiService.getAcademicYears(),
@@ -57,11 +47,11 @@ export function AdvisorTeacherEvaluationFeature({ session }: AdvisorTeacherEvalu
     const yearOptionsData = (academicYearsQuery.data as any[]) || [];
     const yearOptions = yearOptionsData.map((y: any) => Number(y.year_name));
 
-    const selectedYearLookup = yearOptionsData.find((y: any) => Number(y.year_name) === Number(year));
-    const semesterOptions = selectedYearLookup?.semesters || [];
-
     const [year, setYear] = useState<number>(getCurrentAcademicYearBE());
     const [semester, setSemester] = useState<number>(getAcademicSemesterDefault());
+
+    const selectedYearLookup = yearOptionsData.find((y: any) => Number(y.year_name) === Number(year));
+    const semesterOptions = selectedYearLookup?.semesters || [];
 
     // Sync year state if data is loaded
     useEffect(() => {

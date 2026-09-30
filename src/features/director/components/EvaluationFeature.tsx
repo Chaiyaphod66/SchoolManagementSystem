@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DirectorApiService } from "@/services/director-api.service";
 
 type EvalType = 'student_teaching' | 'student_advisor' | 'teacher_subject' | 'teacher_advisor';
@@ -51,7 +51,7 @@ export function EvaluationFeature() {
         DirectorApiService.getGradeLevels().then(data => setGradeLevels(data || [])).catch(() => {});
     }, []);
 
-    const load = () => {
+    const load = useCallback(() => {
         if (!year || !semester) return;
         setLoading(true);
         const filters = {
@@ -62,11 +62,11 @@ export function EvaluationFeature() {
         DirectorApiService.getEvaluationResults(year, semester, type, filters)
             .then(rows => { setTopics(rows || []); setLoading(false); })
             .catch(() => setLoading(false));
-    };
+    }, [classLevel, departmentId, semester, subjectId, type, year]);
 
     useEffect(() => {
         if (year && semester) load();
-    }, [year, semester, type]);
+    }, [load, semester, year]);
 
     // Reset subject when department changes
     useEffect(() => {

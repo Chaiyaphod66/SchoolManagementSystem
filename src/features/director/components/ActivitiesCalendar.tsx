@@ -176,7 +176,7 @@ export function ActivitiesCalendar({ onBack }: { onBack?: () => void }) {
 
         if (start > end) end = new Date(start);
 
-        let current = new Date(start);
+        const current = new Date(start);
         let safeCounter = 0;
         while (current <= end && safeCounter < 365) {
             const key = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;

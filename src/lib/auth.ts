@@ -22,7 +22,7 @@ export async function decrypt(token: string): Promise<JWTPayload | null> {
             algorithms: ['HS256'],
         });
         return payload;
-    } catch (error) {
+    } catch {
         return null;
     }
 }
@@ -34,25 +34,29 @@ export async function getSession() {
     return await decrypt(session);
 }
 
-export async function setSessionCookie(payload: any) {
+type SessionCookieOptions = {
+    secure?: boolean;
+};
+
+export async function setSessionCookie(payload: any, options: SessionCookieOptions = {}) {
     const session = await encrypt(payload);
     const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
     const cookieStore = await cookies();
     cookieStore.set('session', session, {
         expires,
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: options.secure ?? process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
     });
 }
 
-export async function clearSessionCookie() {
+export async function clearSessionCookie(options: SessionCookieOptions = {}) {
     const cookieStore = await cookies();
     cookieStore.set('session', '', {
         expires: new Date(0),
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: options.secure ?? process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
     });

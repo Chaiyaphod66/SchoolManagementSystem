@@ -65,7 +65,7 @@ export default function LoginPage() {
                 router.push(config.redirect);
                 router.refresh(); // Refresh root layout to update Header/Sidebar
             }
-        } catch (err) {
+        } catch {
             setError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
         } finally {
             setIsLoading(false);

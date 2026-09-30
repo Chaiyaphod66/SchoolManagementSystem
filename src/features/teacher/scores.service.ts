@@ -97,7 +97,7 @@ export const TeacherScoresService = {
     async getHeaders(teaching_assignment_id: number) {
         // Fetch categories using raw query to bypass stale client
         const categories = await prisma.$queryRaw`
-            SELECT id, teaching_assignment_id, weight_percent, category_type_id FROM "grade_categories"
+            SELECT id, teaching_assignment_id, weight_percent, category_type_id, name FROM "grade_categories"
             WHERE "teaching_assignment_id" = ${teaching_assignment_id}
             ORDER BY "id" ASC
         ` as any[];
@@ -136,7 +136,7 @@ export const TeacherScoresService = {
                 headers.push({
                     id: item.id,
                     category_id: cat.id,
-                    category_name: typeInfo?.type_name || "(ไม่มีชื่อ)",
+                    category_name: typeInfo?.type_name || cat.name || "(ไม่มีชื่อ)",
                     title: item.name,
                     max_score: Number(item.max_score),
                     assessment_period: item.assessment_period,
@@ -155,7 +155,7 @@ export const TeacherScoresService = {
     // Get grade categories for a teaching assignment
     async getCategories(teaching_assignment_id: number) {
         const categories = await prisma.$queryRaw`
-            SELECT id, teaching_assignment_id, weight_percent, category_type_id FROM "grade_categories"
+            SELECT id, teaching_assignment_id, weight_percent, category_type_id, name FROM "grade_categories"
             WHERE "teaching_assignment_id" = ${teaching_assignment_id}
             ORDER BY "id" ASC
         ` as any[];

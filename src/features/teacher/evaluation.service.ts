@@ -1,7 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import { TeacherStudentsService } from '@/features/teacher/students.service';
 
-async function debugLog(_msg: string) {}
+async function debugLog(message: string) {
+    if (process.env.DEBUG_EVALUATION === '1') console.info(message);
+}
 
 async function resolveEvaluationPeriodId(year?: number, semester?: number) {
     if (!year || !semester) return null;
@@ -15,7 +17,7 @@ async function resolveEvaluationPeriodId(year?: number, semester?: number) {
         `, String(year), semester);
         
         return semRow[0]?.id ? Number(semRow[0].id) : null;
-    } catch (_) { return null; }
+    } catch { return null; }
 }
 
 async function resolveAcademicYearId(year?: number) {
@@ -26,7 +28,7 @@ async function resolveAcademicYearId(year?: number) {
             select: { id: true }
         });
         return result?.id ?? null;
-    } catch (_) { return null; }
+    } catch { return null; }
 }
 
 function toNum(value: unknown, fallback = 0) {
@@ -47,7 +49,6 @@ function formatRoomLabel(classLevel?: string | null, room?: string | null) {
 export const TeacherEvaluationService = {
     async getTeachingEvaluation(teacher_id: number, year?: number, semester?: number) {
         try {
-            console.log(`[getTeachingEvaluation] teacher_id=${teacher_id}, year=${year}, semester=${semester}`);
             const rawAssignments = await prisma.teaching_assignments.findMany({
                 where: {
                     teacher_id,
@@ -73,8 +74,6 @@ export const TeacherEvaluationService = {
             // Fallback: If filtered list is empty but raw list has items, return the raw list
             // to prevent empty dropdowns due to year-name formatting mismatches.
             const finalAssignments = assignments.length > 0 ? assignments : rawAssignments;
-
-            console.log(`[getTeachingEvaluation] raw=${rawAssignments.length}, filtered=${assignments.length}, final=${finalAssignments.length}`);
 
             // Pre-fetch the teaching evaluation form ID via Raw SQL
             const formResult: any[] = await prisma.$queryRawUnsafe(`
@@ -295,7 +294,6 @@ export const TeacherEvaluationService = {
                 });
 
                 if (assignment?.subjects) {
-                    const code = assignment.subjects.subject_code || '';
                     const name = assignment.subjects.subject_name || '';
                     const learningGroupId = assignment.subjects.learning_subject_group_id;
 
@@ -307,13 +305,13 @@ export const TeacherEvaluationService = {
                                 SELECT * FROM form_subject_mappings 
                                 WHERE learning_subject_group_id = $1
                             `, learningGroupId);
-                        } catch (e) {
+                        } catch {
                             try {
                                 mappedRows = await prisma.$queryRawUnsafe(`
                                     SELECT * FROM form_subject_mappings 
                                     WHERE subject_group_id = $1
                                 `, learningGroupId);
-                            } catch (e2) { /* fallback to following keywords match */ }
+                            } catch { /* fallback to following keywords match */ }
                         }
                     }
 

@@ -37,13 +37,23 @@ export async function teacherCanAccessAssignmentStudent(
         where: {
             id: assignmentId,
             teacher_id: teacherId,
-            classrooms: {
-                classroom_students: { some: { student_id: studentId } },
-            },
+        },
+        select: {
+            classroom_id: true,
+            semesters: { select: { academic_year_id: true } },
+        },
+    });
+    if (!assignment) return false;
+
+    const membership = await prisma.classroom_students.findFirst({
+        where: {
+            student_id: studentId,
+            classroom_id: assignment.classroom_id,
+            academic_year_id: assignment.semesters.academic_year_id,
         },
         select: { id: true },
     });
-    return Boolean(assignment);
+    return Boolean(membership);
 }
 
 export async function teacherOwnsAssessmentItem(teacherId: number, itemId: number) {
@@ -65,25 +75,49 @@ export async function teacherOwnsCategory(teacherId: number, categoryId: number)
     return Boolean(category);
 }
 
-export async function teacherOwnsClassroom(teacherId: number, classroomId: number) {
+export async function teacherOwnsClassroom(
+    teacherId: number,
+    classroomId: number,
+    academicYearId?: number,
+) {
     const assignment = await prisma.classroom_assignments.findFirst({
-        where: { teacher_id: teacherId, classroom_id: classroomId },
+        where: {
+            teacher_id: teacherId,
+            classroom_id: classroomId,
+            ...(academicYearId ? { academic_year_id: academicYearId } : {}),
+        },
         select: { id: true },
     });
     return Boolean(assignment);
 }
 
-export async function teacherCanAccessStudent(teacherId: number, studentId: number) {
-    const assignment = await prisma.classroom_assignments.findFirst({
+export async function teacherCanAccessStudent(
+    teacherId: number,
+    studentId: number,
+    academicYearId?: number,
+    classroomId?: number,
+) {
+    const assignments = await prisma.classroom_assignments.findMany({
         where: {
             teacher_id: teacherId,
-            classrooms: {
-                classroom_students: { some: { student_id: studentId } },
-            },
+            ...(academicYearId ? { academic_year_id: academicYearId } : {}),
+            ...(classroomId ? { classroom_id: classroomId } : {}),
+        },
+        select: { classroom_id: true, academic_year_id: true },
+    });
+    if (assignments.length === 0) return false;
+
+    const membership = await prisma.classroom_students.findFirst({
+        where: {
+            student_id: studentId,
+            OR: assignments.map((assignment) => ({
+                classroom_id: assignment.classroom_id,
+                academic_year_id: assignment.academic_year_id,
+            })),
         },
         select: { id: true },
     });
-    return Boolean(assignment);
+    return Boolean(membership);
 }
 
 export async function teacherOwnsEvent(teacherId: number, userId: number, eventId: number) {

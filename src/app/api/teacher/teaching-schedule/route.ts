@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { getAuthenticatedTeacherId } from '@/app/api/teacher/_utils';
 
-export async function GET(request: Request) {
+export async function GET() {
     try {
         const session = await getSession() as any;
         if (!session || session.role !== 'teacher') return errorResponse('Unauthorized', 401);

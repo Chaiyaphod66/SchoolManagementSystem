@@ -58,10 +58,6 @@ function getYearKey(section: SectionLike) {
     return getAcademicYearValue(section);
 }
 
-function formatYearLabel(section: SectionLike) {
-    return getAcademicYearValue(section) || "-";
-}
-
 function formatRoomLabel(section: SectionLike) {
     const level = txt(section?.class_level);
     return level || "-";
@@ -141,9 +137,6 @@ export function ScoreInputFeature({ session }: { session: any }) {
     const [editCategoryId, setEditCategoryId] = useState<number | null>(null);
     const [editAssessmentPeriod, setEditAssessmentPeriod] = useState("");
     const [deletingHeaderId, setDeletingHeaderId] = useState<number | null>(null);
-    const activeHeader = headers.find((h) => h.id === selectedHeaderId) || null;
-    const activeMax = toNum(activeHeader?.max_score);
-
     // categories
 
     const scoreInputRefs = useRef<Record<string, HTMLInputElement | null>>({}); // key: studentId-headerId
@@ -206,6 +199,8 @@ export function ScoreInputFeature({ session }: { session: any }) {
         });
         return groups;
     }, [orderedHeaders]);
+    const hasAssessmentPeriodRow = assessmentPeriodGroups.some((group) => group.hasPeriod);
+    const scoreHeaderRowCount = hasAssessmentPeriodRow ? 3 : 2;
 
     const filteredManageHeaders = useMemo(() => {
         let result = orderedHeaders;
@@ -363,12 +358,6 @@ export function ScoreInputFeature({ session }: { session: any }) {
     }, [academicYears, selectedYearKey]);
 
 
-    const selectedSubjectLabel = subjectOptions.find((o: any) => o.value === selectedSubjectKey)?.label || "-";
-    const selectedRoomLabel = roomOptions.find((o: any) => o.value === selectedRoomKey)?.label || "-";
-    const selectedYearLabel = yearOptions.find((o: any) => o.value === selectedYearKey)?.label || "-";
-    const selectedTermLabel = semesterOptions.find((o: any) => o.value === selectedTermKey)?.label || "-";
-    const selectionReady = !!(selectedSubjectKey && selectedRoomKey && selectedYearKey && selectedTermKey);
-
     /* ─── loaders ─── */
     const loadCategories = useCallback(async (sectionId: number) => {
         try {
@@ -466,8 +455,8 @@ export function ScoreInputFeature({ session }: { session: any }) {
         try {
             await TeacherApiService.addScoreCategory(sectionId, name, weight, typeId);
             await loadCategories(sectionId);
-        } catch (err) {
-            alert("Failed to add category");
+        } catch {
+            alert("เพิ่มหมวดคะแนนไม่สำเร็จ");
         } finally {
             setCategorySaving(false);
         }
@@ -481,8 +470,8 @@ export function ScoreInputFeature({ session }: { session: any }) {
             setNewCategoryTypeName("");
             const types = await TeacherApiService.getGradeCategoryTypes();
             setCategoryTypes(types);
-        } catch (err) {
-            alert("Failed to add category type");
+        } catch {
+            alert("เพิ่มประเภทหมวดคะแนนไม่สำเร็จ");
         } finally {
             setAddingCategoryType(false);
         }
@@ -496,13 +485,11 @@ export function ScoreInputFeature({ session }: { session: any }) {
         setDeletingId(null);
 
         try {
-            console.log("Deleting category ID:", id);
             await TeacherApiService.deleteScoreCategory(id);
             await loadSectionData(); // Reload headers as they might have been deleted
-            console.log("Deletion successful");
         } catch (err) {
             console.error("Failed to delete category:", err);
-            alert("Failed to delete category");
+            alert("ลบหมวดคะแนนไม่สำเร็จ");
             // Rollback on error
             setCategories(originalCategories);
         } finally {
@@ -518,8 +505,8 @@ export function ScoreInputFeature({ session }: { session: any }) {
             setEditingCategoryTypeId(null);
             const types = await TeacherApiService.getGradeCategoryTypes();
             setCategoryTypes(types);
-        } catch (err) {
-            alert("Failed to update category type");
+        } catch {
+            alert("แก้ไขประเภทหมวดคะแนนไม่สำเร็จ");
         } finally {
             setAddingCategoryType(false);
         }
@@ -550,8 +537,8 @@ export function ScoreInputFeature({ session }: { session: any }) {
             }
             setShowCategoryManageModal(false);
             await loadSectionData();
-        } catch (err) {
-            alert("Failed to save categories");
+        } catch {
+            alert("บันทึกหมวดคะแนนไม่สำเร็จ");
         } finally {
             setCategorySaving(false);
         }
@@ -700,7 +687,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
                 editingHeaderId,
                 title,
                 isPassFail ? 0 : toNum(editMax),
-                [],
+                undefined,
                 editCategoryId || undefined,
                 isContinuousScoreCategory(editCategoryId) ? editAssessmentPeriod : null
             );
@@ -763,20 +750,6 @@ export function ScoreInputFeature({ session }: { session: any }) {
             alert("บันทึกคะแนนไม่สำเร็จ");
         }
         finally { setSaving(false); }
-    };
-
-    const handleFillZero = () => {
-        if (!selectedHeaderId) return alert("กรุณาเลือกหัวข้อที่ต้องการเติม 0");
-        setScoreMap((prev) => {
-            const next = JSON.parse(JSON.stringify(prev));
-            students.forEach((s) => {
-                if (!next[s.id]) next[s.id] = {};
-                if ((next[s.id][selectedHeaderId] ?? "") === "") {
-                    next[s.id][selectedHeaderId] = "0";
-                }
-            });
-            return next;
-        });
     };
 
     const handleScoreInputEnter = (event: KeyboardEvent<HTMLInputElement>, rowIndex: number, headerId: number) => {
@@ -1112,24 +1085,24 @@ export function ScoreInputFeature({ session }: { session: any }) {
                             <div className="overflow-x-auto max-w-full">
                                 <table className="w-full border-collapse border border-slate-300">
                                     <thead>
-                                        {categories.length > 0 && (
+                                        {(
                                             <tr className="bg-slate-50/50 border-b border-slate-300">
                                                 <th
-                                                    rowSpan={3}
+                                                    rowSpan={scoreHeaderRowCount}
                                                     className="sticky left-0 z-20 bg-slate-50 px-4 py-3 text-base font-bold text-slate-600 uppercase tracking-wider min-w-[80px] w-16 border-r border-slate-300 align-middle"
                                                 >
                                                     เลขที่
                                                 </th>
 
                                                 <th
-                                                    rowSpan={3}
+                                                    rowSpan={scoreHeaderRowCount}
                                                     className="sticky left-16 z-20 bg-slate-50 px-4 py-3 text-base font-bold text-slate-600 uppercase tracking-wider min-w-[80px] border-r border-slate-300 align-middle"
                                                 >
                                                     รหัสประจำตัว
                                                 </th>
 
                                                 <th
-                                                    rowSpan={3}
+                                                    rowSpan={scoreHeaderRowCount}
                                                     className="sticky left-[152px] z-20 bg-slate-50 px-4 py-3 text-base font-bold text-slate-600 uppercase tracking-wider min-w-[180px] border-r border-slate-300 align-middle shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]"
                                                 >
                                                     ชื่อ-นามสกุล
@@ -1151,7 +1124,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                                 )}
                                                 {!isPassFail && (
                                                     <th
-                                                        rowSpan={3}
+                                                        rowSpan={scoreHeaderRowCount}
                                                         className="min-w-[170px] border-l border-slate-300 bg-red-50/70 px-4 py-3 text-center align-middle text-lg font-bold text-red-700"
                                                     >
                                                         คะแนนรวม (%)
@@ -1159,7 +1132,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                                 )}
                                             </tr>
                                         )}
-                                        {assessmentPeriodGroups.some((group) => group.hasPeriod) && (
+                                        {hasAssessmentPeriodRow && (
                                             <tr className="border-b border-slate-300 bg-white">
 
                                                 {assessmentPeriodGroups.map((group) => (
@@ -1171,7 +1144,7 @@ export function ScoreInputFeature({ session }: { session: any }) {
                                                             : "bg-slate-50/70 text-slate-400"
                                                             }`}
                                                     >
-                                                        {group.label || "ปลายภาค"}
+                                                        {group.label || "ไม่ระบุช่วง"}
                                                     </th>
                                                 ))}
                                             </tr>

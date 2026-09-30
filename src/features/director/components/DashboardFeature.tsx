@@ -12,7 +12,6 @@ import {
     ClipboardDocumentCheckIcon,
     CurrencyDollarIcon,
     MapPinIcon,
-    BellIcon,
     ExclamationTriangleIcon,
     ExclamationCircleIcon,
     InformationCircleIcon,
@@ -26,8 +25,7 @@ import {
     LifebuoyIcon,
     EyeIcon,
     DocumentTextIcon,
-    ScaleIcon,
-    DatabaseIcon
+    ScaleIcon
 } from "@/components/SimpleIcons";
 
 // === Pure CSS/SVG Chart Components ===
@@ -150,20 +148,14 @@ export function DashboardFeature({ session }: { session: any }) {
     const subjEvals = groupEvalByForm(evalData.subjectEvalByTopic);
     const advEvals = groupEvalByForm(evalData.advisorEvalByTopic);
 
-    const actItems = d.actionItems || [];
     const events = d.upcomingEvents || [];
-    const grades = d.grades || {};
     const alerts = d.alerts || [];
     const atRisk = d.atRiskStudents || [];
     const adv = d.advanced || {};
     const exSummary = adv.executiveSummary || [];
-    const advRisk = adv.predictiveRisk || [];
     const advSubjDif = adv.subjectDifficulty || [];
     const advWorkload = adv.teacherWorkloadVsEval || [];
     const advCompetency = adv.competencyRadar || [];
-    const advRoi = adv.budgetRoi || [];
-    const advAtt = adv.attendanceFlow || [];
-    const comparisons = d.comparisons || {};
     const tabs = [
         { id: 'overview', label: 'ภาพรวม', icon: ChartBarIcon },
         { id: 'students', label: 'นักเรียน', icon: UserGroupIcon, badge: atRisk.length ? atRisk.length : null, badgeType: 'error' },
@@ -596,10 +588,8 @@ export function DashboardFeature({ session }: { session: any }) {
                                     </div>
                                     {rankedRooms.map((room: any, i: number) => {
                                         const gpa = room.avg_gpa || 0;
-                                        const pct = Math.min(100, (gpa / 4) * 100);
                                         const rankBg = i === 0 ? 'bg-gradient-to-br from-pink-400 to-red-500 shadow-red-200 shadow-sm' : i === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-400' : i === 2 ? 'bg-gradient-to-br from-pink-600 to-red-700' : 'bg-slate-200 text-slate-600';
                                         const rankText = i <= 2 ? 'text-white' : 'text-slate-600';
-                                        const barColor = gpa >= 3.0 ? '#EC4899' : gpa >= 2.0 ? '#DC2626' : '#ef4444';
                                         const gpaColor = gpa >= 3.0 ? 'text-pink-600' : gpa >= 2.0 ? 'text-red-600' : 'text-red-600';
 
                                         return (
@@ -688,10 +678,8 @@ export function DashboardFeature({ session }: { session: any }) {
                                     </div>
                                     {(d.topRooms || []).map((r: any, i: number) => {
                                         const gpa = Number(r.avg_score || 0);
-                                        const pct = Math.min(100, (gpa / 4) * 100);
                                         const rankBg = i === 0 ? 'bg-gradient-to-br from-pink-400 to-red-500 shadow-red-200 shadow-sm' : i === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-400' : i === 2 ? 'bg-gradient-to-br from-pink-600 to-red-700' : 'bg-slate-200 text-slate-600';
                                         const rankText = i <= 2 ? 'text-white' : 'text-slate-600';
-                                        const barColor = gpa >= 3.0 ? '#EC4899' : gpa >= 2.0 ? '#DC2626' : '#ef4444';
                                         const gpaColor = gpa >= 3.0 ? 'text-pink-600' : gpa >= 2.0 ? 'text-red-600' : 'text-red-600';
                                         const levelName = r.class_level || r.level || "-";
 

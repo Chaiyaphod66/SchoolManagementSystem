@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { TeacherApiService } from "@/services/teacher-api.service";
 import { getCurrentAcademicYearBE } from "@/features/student/academic-term";
@@ -8,7 +8,7 @@ function currentAcademicYearGuess() {
     return getCurrentAcademicYearBE();
 }
 
-function formatClassRoomDisplay(classLevel?: string | null, room?: string | null) {
+function formatClassRoomDisplay(classLevel?: string | null) {
     const level = String(classLevel || "").trim();
     return level || "-";
 }
@@ -21,11 +21,11 @@ export function StudentsFeature({ session }: { session: any }) {
     const [search, setSearch] = useState("");
     const [notice, setNotice] = useState("");
 
-    const loadStudents = async () => {
+    const loadStudents = useCallback(async () => {
         setLoading(true);
         setNotice("");
         try {
-            let rows = (await TeacherApiService.getAdvisoryStudents(session.id, year, semester)) || [];
+            const rows = (await TeacherApiService.getAdvisoryStudents(session.id, year, semester)) || [];
 
             if (rows.length === 0 && year < 2400) {
                 const beYear = year + 543;
@@ -56,11 +56,11 @@ export function StudentsFeature({ session }: { session: any }) {
         } finally {
             setLoading(false);
         }
-    };
+    }, [semester, session.id, year]);
 
     useEffect(() => {
         loadStudents();
-    }, [session.id, year, semester]);
+    }, [loadStudents]);
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -136,7 +136,7 @@ export function StudentsFeature({ session }: { session: any }) {
                                     <td className="px-6 py-4 text-sm text-slate-500">{s.roll_number || "-"}</td>
                                     <td className="px-6 py-4 text-sm font-medium text-slate-800 tracking-tight">{s.student_code}</td>
                                     <td className="px-6 py-4 text-sm text-slate-800 font-medium">{`${s.prefix || ""}${s.first_name || ""} ${s.last_name || ""}`.trim()}</td>
-                                    <td className="px-6 py-4 text-sm text-slate-600">{formatClassRoomDisplay(s.class_level, s.room)}</td>
+                                    <td className="px-6 py-4 text-sm text-slate-600">{formatClassRoomDisplay(s.class_level)}</td>
                                     <td className="px-6 py-4 text-center">
                                         <Link href={`/teacher/student_profile?id=${s.id}`} className="text-xs text-pink-600 hover:text-pink-700 font-medium bg-pink-50 px-3 py-1.5 rounded-lg hover:bg-pink-100 transition-colors">ดูโปรไฟล์</Link>
                                     </td>

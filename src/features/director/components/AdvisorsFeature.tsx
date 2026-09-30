@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DirectorApiService } from "@/services/director-api.service";
 import Portal from "@/components/Portal";
 
@@ -68,7 +68,7 @@ export function AdvisorsFeature() {
         DirectorApiService.getAdvisors().then((rows) => setAllAdvisors(rows || [])).catch(() => { });
     };
 
-    const load = () => {
+    const load = useCallback(() => {
         setLoading(true);
         setLoadError("");
         DirectorApiService.getAdvisors({
@@ -117,11 +117,11 @@ export function AdvisorsFeature() {
                 setAdvisors([]);
                 setLoading(false);
             });
-    };
+    }, [semester, selectedLevel, year]);
 
     useEffect(() => {
         load();
-    }, [year, semester, selectedLevel]);
+    }, [load]);
 
     useEffect(() => {
         Promise.all([

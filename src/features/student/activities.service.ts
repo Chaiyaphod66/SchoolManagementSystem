@@ -295,7 +295,6 @@ export const ActivitiesService = {
         
         // --- AUTO REPAIR SEQUENCES ---
         try {
-            console.log('Running inline sequence repair before submission...');
             const tables = ['evaluation_responses', 'evaluation_answers'];
             for (const table of tables) {
                 const maxRes = await prisma.$queryRawUnsafe(`SELECT MAX(id) as max FROM ${table}`);

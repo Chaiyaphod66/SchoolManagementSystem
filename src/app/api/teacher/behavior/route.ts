@@ -19,8 +19,13 @@ export async function GET(request: Request) {
         }
 
         if (action === 'classrooms') {
+            const session = await getSession() as any;
+            if (!session) return errorResponse('Unauthorized', 401);
             const level_id = searchParams.get('level_id') ? Number(searchParams.get('level_id')) : undefined;
-            const classrooms = await TeacherBehaviorService.getClassrooms(level_id);
+            const teacher_id = session.role === 'teacher'
+                ? (await getAuthenticatedTeacherId()) ?? undefined
+                : undefined;
+            const classrooms = await TeacherBehaviorService.getClassrooms(level_id, teacher_id);
             return successResponse(classrooms);
         }
 
@@ -42,7 +47,6 @@ export async function GET(request: Request) {
                 classroom_id
             });
             
-            console.log(`Behavior API: Found ${students.length} students`);
             return successResponse(students);
         }
 
@@ -65,11 +69,16 @@ export async function GET(request: Request) {
             const studentId = searchParams.get('student_id') ? Number(searchParams.get('student_id')) : undefined;
             if (!studentId) return errorResponse('Student ID is required', 400);
 
-            const history = await TeacherBehaviorService.getStudentBehaviorHistory(
-                studentId,
-                session.id,
-                session.role
-            );
+            if (session.role === 'teacher') {
+                const teacherId = await getAuthenticatedTeacherId();
+                if (!teacherId || !await teacherCanAccessStudent(teacherId, studentId)) {
+                    return errorResponse('Student is not in your homeroom classroom', 403);
+                }
+            } else if (session.role !== 'director') {
+                return errorResponse('Forbidden', 403);
+            }
+
+            const history = await TeacherBehaviorService.getStudentBehaviorHistory(studentId);
             return successResponse(history);
         }
 

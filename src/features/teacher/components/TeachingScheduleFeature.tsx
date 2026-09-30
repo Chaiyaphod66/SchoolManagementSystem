@@ -22,7 +22,6 @@ interface ScheduleSlot {
     academic_year: string;
 }
 
-const DAY_ORDER = [1, 2, 3, 4, 5, 6, 7]; // Sun=1..Sat=7 (depends on DB)
 const DAY_COLORS: Record<number, { bg: string; text: string; border: string }> = {
     1: { bg: "bg-pink-50 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.1)]", text: "text-pink-700", border: "border-pink-200" }, // จันทร์
     2: { bg: "bg-red-50 shadow-[inset_0_0_0_1px_rgba(20,184,166,0.1)]", text: "text-red-700", border: "border-red-200" }, // อังคาร

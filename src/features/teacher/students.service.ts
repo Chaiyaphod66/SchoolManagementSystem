@@ -2,7 +2,9 @@ import { prisma } from '@/lib/prisma';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-async function debugLog(_msg: string) {}
+async function debugLog(message: string) {
+    if (process.env.DEBUG_EVALUATION === '1') console.info(message);
+}
 
 const STUDENT_PHOTO_REL_DIR = '/uploads/student-photos';
 const STUDENT_PHOTO_PUBLIC_DIR = path.join(process.cwd(), 'public', 'uploads', 'student-photos');
@@ -19,10 +21,6 @@ const DEFAULT_READING_THINKING_TOPICS = [
     'การเขียน',
 ];
 
-function nextId(maxId?: number | null) {
-    return (Number(maxId || 0) || 0) + 1;
-}
-
 async function resolveStudentPhotoUrl(student_id: number) {
     if (!student_id) return null;
 
@@ -36,15 +34,6 @@ async function resolveStudentPhotoUrl(student_id: number) {
         }
     }
     return null;
-}
-
-async function getStudentUserId(student_id: number) {
-    if (!student_id) return null;
-    const student = await prisma.students.findUnique({
-        where: { id: student_id },
-        select: { user_id: true },
-    });
-    return student?.user_id ?? null;
 }
 
 async function getTeacherUserId(teacher_id: number) {
@@ -281,20 +270,24 @@ export const TeacherStudentsService = {
     async canTeacherAccessStudent(teacher_id: number, student_id: number) {
         if (!teacher_id || !student_id) return false;
 
-        const studentClassroomRecords = await prisma.classroom_students.findMany({
-            where: { student_id },
-            select: { classroom_id: true },
+        const assignments = await prisma.classroom_assignments.findMany({
+            where: { teacher_id },
+            select: { classroom_id: true, academic_year_id: true },
         });
+        if (assignments.length === 0) return false;
 
-        const classroomIds = studentClassroomRecords.map(sc => sc.classroom_id);
-        if (classroomIds.length === 0) return false;
-
-        const assignment = await prisma.classroom_assignments.findFirst({
-            where: { teacher_id, classroom_id: { in: classroomIds } },
+        const membership = await prisma.classroom_students.findFirst({
+            where: {
+                student_id,
+                OR: assignments.map((assignment) => ({
+                    classroom_id: assignment.classroom_id,
+                    academic_year_id: assignment.academic_year_id,
+                })),
+            },
             select: { id: true },
         });
 
-        return Boolean(assignment);
+        return Boolean(membership);
     },
 
     // Homeroom teachers stay with the same classroom; classroom_assignments is the source of truth.
@@ -619,7 +612,7 @@ export const TeacherStudentsService = {
                     label: item.label || String(item.score_value),
                     value: Number(item.score_value),
                 }));
-            } catch (e) {
+            } catch {
                 // Determine fallback based on scaleTypeID
                 if (scaleTypeID === 2) {
                     scaleOptions = [
@@ -662,7 +655,6 @@ export const TeacherStudentsService = {
             const flatTopics: any[] = [];
 
             if (form && (form as any).evaluation_questions?.length) {
-                console.log(`[getAdvisorEvaluationTemplateForStudent] Using form questions: ${(form as any).evaluation_questions.length}`);
                 const sectionMap = new Map<number, any>();
                 for (const q of (form as any).evaluation_questions) {
                     const sectId = q.section_id || 1;
@@ -683,7 +675,6 @@ export const TeacherStudentsService = {
                     flatTopics.push(topic);
                 }
             } else {
-                console.log(`[getAdvisorEvaluationTemplateForStudent] Using fallback topics`);
                 const defaultTopics = fallbackTopics.map((name, idx) => ({ id: idx + 1, name }));
                 groupedSections.push({
                     id: 1,
@@ -707,8 +698,6 @@ export const TeacherStudentsService = {
             }
 
             const latestResponse = await findLatestAdvisorResponseForStudent(form.id, student_id, period_id ?? null);
-            console.log(`[getAdvisorEvaluationTemplateForStudent] Latest response: ${latestResponse?.id}`);
-
             const latestAnswers: any[] = latestResponse
                 ? await prisma.$queryRawUnsafe(`
                     SELECT a.*, q.question_text

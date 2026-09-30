@@ -9,7 +9,7 @@ const updateHealthSchema = z.object({
     milk_drinking: z.string().nullable().optional(),
 }).strict();
 
-export async function GET(request: Request) {
+export async function GET() {
     try {
         const session = await getSession();
         const sessionResult = parseStudentIdFromSession(session);

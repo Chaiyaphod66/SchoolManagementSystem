@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { TeacherStudentsService } from '@/features/teacher/students.service';
 import { errorResponse, successResponse } from '@/lib/api-response';
 import { z } from 'zod';

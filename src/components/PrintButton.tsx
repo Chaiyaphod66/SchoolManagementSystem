@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { useReactToPrint } from 'react-to-print';
 
 interface PrintButtonProps {
